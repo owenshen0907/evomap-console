@@ -792,13 +792,27 @@ private struct NodeDetailView: View {
 
                     if node.claimURL != nil || node.claimCode != nil {
                         detailCard(AppLocalization.string("node.card.claim", fallback: "Claim"), systemImage: "link.badge.plus") {
-                            if let claimCode = node.claimCode {
-                                LabeledContent(AppLocalization.string("node.field.claim_code", fallback: "Claim code"), value: claimCode)
-                            }
-                            if let claimURL = node.claimURL, let url = URL(string: claimURL) {
-                                Link(destination: url) {
-                                    Label(AppLocalization.string("node.action.open_claim_url", fallback: "Open Claim URL"), systemImage: "arrow.up.right.square")
+                            if node.isSampleData {
+                                Text(AppLocalization.string(
+                                    "node.claim.demo_warning",
+                                    fallback: "This is seeded demo data. Its claim code is intentionally not valid. Use Connect Node to request a fresh claim URL from EvoMap."
+                                ))
+                                .foregroundStyle(.secondary)
+                            } else {
+                                if let claimCode = node.claimCode {
+                                    LabeledContent(AppLocalization.string("node.field.claim_code", fallback: "Claim code"), value: claimCode)
                                 }
+                                if let claimURL = node.claimURL, let url = URL(string: claimURL) {
+                                    Link(destination: url) {
+                                        Label(AppLocalization.string("node.action.open_claim_url", fallback: "Open Claim URL"), systemImage: "arrow.up.right.square")
+                                    }
+                                }
+                                Text(AppLocalization.string(
+                                    "node.claim.expiry_note",
+                                    fallback: "Claim links can expire. If EvoMap says the code is invalid, run Connect Node again and use the newest claim URL."
+                                ))
+                                .font(.footnote)
+                                .foregroundStyle(.tertiary)
                             }
                         }
                     }

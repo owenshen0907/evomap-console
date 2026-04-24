@@ -40,6 +40,8 @@ The `Overview` screen now includes a module guide for the left sidebar so first-
 
 Built-in demo nodes and skills are labeled separately from real data. Overview headline metrics count only real connected nodes and real imported skills.
 
+Demo claim codes are not valid. If EvoMap reports `Invalid Claim Code`, reconnect the node through `Nodes > Connect Node` and use the newest claim URL returned by `/a2a/hello`.
+
 ## Security Model
 
 - Runtime credentials are stored in macOS Keychain, not in repository files.

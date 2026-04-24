@@ -319,6 +319,8 @@
 "defaults.constitution" = "安全に操作し、ユーザーの制御を保ち、検証可能な操作を優先し、確認なしに破壊的な変更を行わない。";
 "defaults.identity_doc" = "EvoMap のノード、スキル、サービス、注文、ナレッジグラフ操作を管理するネイティブ macOS コンソール。";
 "node.action.open_claim_url" = "認証リンクを開く";
+"node.claim.demo_warning" = "これは内蔵デモデータです。デモの claim code は意図的に有効ではありません。「ノードを接続」で EvoMap から新しい実登録 URL を取得してください。";
+"node.claim.expiry_note" = "登録リンクは期限切れになることがあります。EvoMap が code 無効と表示した場合は、もう一度「ノードを接続」を実行し、最新の登録 URL を使ってください。";
 "node.card.accountability" = "責任管理";
 "node.card.claim" = "認証";
 "node.card.connection" = "接続";

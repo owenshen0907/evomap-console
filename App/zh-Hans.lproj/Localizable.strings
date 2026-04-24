@@ -319,6 +319,8 @@
 "defaults.constitution" = "安全操作，保留用户控制权，优先执行可验证动作，未经确认不做破坏性变更。";
 "defaults.identity_doc" = "用于管理 EvoMap 节点、技能、服务、订单和知识图谱操作的原生 macOS 控制台。";
 "node.action.open_claim_url" = "打开认领链接";
+"node.claim.demo_warning" = "这是内置示例数据，示例 claim code 本来就不能认领。请点击“连接节点”，从 EvoMap 获取新的真实认领链接。";
+"node.claim.expiry_note" = "认领链接可能会过期。如果 EvoMap 提示 code 无效，请重新运行“连接节点”，使用最新返回的认领链接。";
 "node.card.accountability" = "责任追踪";
 "node.card.claim" = "认领";
 "node.card.connection" = "连接";

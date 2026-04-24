@@ -319,6 +319,8 @@
 "defaults.constitution" = "Operate safely, preserve user control, favor verifiable actions, and avoid destructive changes without confirmation.";
 "defaults.identity_doc" = "Native macOS console for managing EvoMap nodes, skills, services, orders, and knowledge graph operations.";
 "node.action.open_claim_url" = "Open Claim URL";
+"node.claim.demo_warning" = "This is seeded demo data. Its claim code is intentionally not valid. Use Connect Node to request a fresh claim URL from EvoMap.";
+"node.claim.expiry_note" = "Claim links can expire. If EvoMap says the code is invalid, run Connect Node again and use the newest claim URL.";
 "node.card.accountability" = "Accountability";
 "node.card.claim" = "Claim";
 "node.card.connection" = "Connection";
