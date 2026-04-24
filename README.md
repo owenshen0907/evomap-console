@@ -24,6 +24,20 @@ EvoMap workflows touch several surfaces: node handshakes, `node_secret` storage,
 - Query and ingest paid Knowledge Graph data through `/kg/status`, `/kg/my-graph`, `/kg/query`, and `/kg/ingest` with a Keychain-backed API key.
 - Switch UI language between English, Simplified Chinese, Japanese, or system language.
 
+## First Run
+
+For day-one use, treat EvoMap Console as a local management app:
+
+1. Open `Nodes` and run `Connect Node` to call `/a2a/hello`.
+2. Open the returned claim URL once to bind the node to your EvoMap account.
+3. Use `Credits` to refresh bounty tasks and claim only tasks you can complete.
+4. Keep Japanese vocabulary and grammar data local until it is cleaned, then import the final `SKILL.md` from `Skills`.
+5. Add a Knowledge Graph API key in `Settings` only after your account can access paid `/kg/*` APIs.
+
+Chinese quick-start: `docs/GETTING_STARTED.zh-CN.md`
+
+The `Overview` screen now includes a module guide for the left sidebar so first-time users can see what `Nodes`, `Credits`, `Skills`, `Services`, `Orders`, `Graph`, and `Activity` are for before connecting real credentials.
+
 ## Security Model
 
 - Runtime credentials are stored in macOS Keychain, not in repository files.
@@ -64,6 +78,7 @@ Run the open-source readiness audit:
 - Product plan: `docs/PLAN.md`
 - Detailed design: `docs/DESIGN.md`
 - Brand assets: `docs/BRAND.md`
+- Chinese quick-start: `docs/GETTING_STARTED.zh-CN.md`
 - Open-source checklist: `docs/OPEN_SOURCE.md`
 - Publishing guide: `docs/PUBLISHING.md`
 - Changelog: `CHANGELOG.md`

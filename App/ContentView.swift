@@ -320,6 +320,91 @@ private struct OverviewListView: View {
 private struct OverviewDetailView: View {
     @ObservedObject var store: ConsoleStore
 
+    private var dayOneSteps: [DayOneStep] {
+        [
+            DayOneStep(
+                id: "node",
+                title: AppLocalization.string("overview.day_one.node.title", fallback: "Connect this Mac as a node"),
+                detail: AppLocalization.string("overview.day_one.node.detail", fallback: "Use Nodes > Connect Node. The app sends `/a2a/hello`, stores the returned `node_secret` in Keychain, and shows a claim URL when EvoMap returns one."),
+                systemImage: "server.rack",
+                targetSection: .nodes
+            ),
+            DayOneStep(
+                id: "claim",
+                title: AppLocalization.string("overview.day_one.claim.title", fallback: "Claim the node in the browser"),
+                detail: AppLocalization.string("overview.day_one.claim.detail", fallback: "Open the claim URL once. This binds node earnings to your EvoMap account; the local app itself never settles credits."),
+                systemImage: "link.badge.plus",
+                targetSection: .nodes
+            ),
+            DayOneStep(
+                id: "credits",
+                title: AppLocalization.string("overview.day_one.credits.title", fallback: "Use Credits as the operating queue"),
+                detail: AppLocalization.string("overview.day_one.credits.detail", fallback: "After the node is claimed, refresh bounties, claim only tasks you can solve, then publish and complete the solution through the A2A flow."),
+                systemImage: "target",
+                targetSection: .credits
+            ),
+            DayOneStep(
+                id: "skill",
+                title: AppLocalization.string("overview.day_one.skill.title", fallback: "Publish skills only after the content is clean"),
+                detail: AppLocalization.string("overview.day_one.skill.detail", fallback: "Import a local `SKILL.md` when your Japanese vocabulary and grammar data is ready. Keep the first public skill narrow and testable."),
+                systemImage: "sparkles.rectangle.stack",
+                targetSection: .skills
+            ),
+            DayOneStep(
+                id: "api",
+                title: AppLocalization.string("overview.day_one.api.title", fallback: "Add API keys later"),
+                detail: AppLocalization.string("overview.day_one.api.detail", fallback: "For day one, node_secret is enough. Use Settings > Knowledge Graph API Key only after your account can access paid `/kg/*` APIs."),
+                systemImage: "key",
+                targetSection: .graph
+            ),
+        ]
+    }
+
+    private var moduleGuideItems: [ModuleGuideItem] {
+        [
+            ModuleGuideItem(
+                section: .overview,
+                purpose: AppLocalization.string("overview.module.overview.purpose", fallback: "A command-center summary of node health, published skills, pending reviews, and recent events."),
+                useWhen: AppLocalization.string("overview.module.overview.when", fallback: "Start here to understand whether the local console is ready before opening specific workspaces.")
+            ),
+            ModuleGuideItem(
+                section: .nodes,
+                purpose: AppLocalization.string("overview.module.nodes.purpose", fallback: "Connect this Mac to EvoMap through `/a2a/hello`, store `node_secret`, inspect claim state, and refresh heartbeat snapshots."),
+                useWhen: AppLocalization.string("overview.module.nodes.when", fallback: "Use this first. Without a real connected node, most authenticated A2A actions cannot run.")
+            ),
+            ModuleGuideItem(
+                section: .credits,
+                purpose: AppLocalization.string("overview.module.credits.purpose", fallback: "Explain balances, show the Premium target, refresh bounty tasks, and guide the claim-answer-complete credit flow."),
+                useWhen: AppLocalization.string("overview.module.credits.when", fallback: "Use after the node is claimed to find work that can earn credits.")
+            ),
+            ModuleGuideItem(
+                section: .skills,
+                purpose: AppLocalization.string("overview.module.skills.purpose", fallback: "Import local `SKILL.md` files and publish, update, rollback, download, or manage Skill Store entries."),
+                useWhen: AppLocalization.string("overview.module.skills.when", fallback: "Use after your Japanese vocabulary or grammar workflow is cleaned and ready to be called by others.")
+            ),
+            ModuleGuideItem(
+                section: .services,
+                purpose: AppLocalization.string("overview.module.services.purpose", fallback: "Browse the marketplace and publish callable services with pricing, capabilities, and delivery expectations."),
+                useWhen: AppLocalization.string("overview.module.services.when", fallback: "Use when you want others to spend credits calling your Japanese learning service.")
+            ),
+            ModuleGuideItem(
+                section: .orders,
+                purpose: AppLocalization.string("overview.module.orders.purpose", fallback: "Track marketplace orders, task states, submissions, acceptance, and ratings."),
+                useWhen: AppLocalization.string("overview.module.orders.when", fallback: "Use after your service starts receiving calls or when you order another service.")
+            ),
+            ModuleGuideItem(
+                section: .graph,
+                purpose: AppLocalization.string("overview.module.graph.purpose", fallback: "Query and write paid EvoMap Knowledge Graph data through `/kg/*` endpoints."),
+                useWhen: AppLocalization.string("overview.module.graph.when", fallback: "Use later, after your account can access paid KG APIs and the API key is saved in Settings.")
+            ),
+            ModuleGuideItem(
+                section: .activity,
+                purpose: AppLocalization.string("overview.module.activity.purpose", fallback: "A future audit/history workspace for reviewing what the console and agents have done."),
+                useWhen: AppLocalization.string("overview.module.activity.when", fallback: "Ignore for now; it remains intentionally deferred.")
+            ),
+        ]
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -332,6 +417,55 @@ private struct OverviewDetailView: View {
                 ))
                     .font(.title3)
                     .foregroundStyle(.secondary)
+
+                detailCard(AppLocalization.string("overview.day_one.title", fallback: "Use it today"), systemImage: "map") {
+                    Text(AppLocalization.string(
+                        "overview.day_one.note",
+                        fallback: "Treat this app as your local EvoMap control room. It does not replace EvoMap's hosted service and it does not require your own server for normal use."
+                    ))
+                        .foregroundStyle(.secondary)
+
+                    VStack(spacing: 10) {
+                        ForEach(dayOneSteps) { step in
+                            DayOneStepRow(step: step) {
+                                store.setSection(step.targetSection)
+                            }
+                        }
+                    }
+                }
+
+                detailCard(AppLocalization.string("overview.runtime.title", fallback: "What runs where"), systemImage: "desktopcomputer") {
+                    LabeledContent(
+                        AppLocalization.string("overview.runtime.local.title", fallback: "This Mac"),
+                        value: AppLocalization.string("overview.runtime.local.value", fallback: "Operator UI, Keychain storage, local drafts")
+                    )
+                    LabeledContent(
+                        AppLocalization.string("overview.runtime.evomap.title", fallback: "EvoMap"),
+                        value: AppLocalization.string("overview.runtime.evomap.value", fallback: "Hosted A2A APIs, account credits, Skill Store, marketplace, KG")
+                    )
+                    Text(AppLocalization.string(
+                        "overview.runtime.note",
+                        fallback: "You only need a server if you later want a fully autonomous always-on worker. For manual management, this Mac app plus the official EvoMap endpoints is enough."
+                    ))
+                        .font(.footnote)
+                        .foregroundStyle(.tertiary)
+                }
+
+                detailCard(AppLocalization.string("overview.module_guide.title", fallback: "Module guide"), systemImage: "square.grid.2x2") {
+                    Text(AppLocalization.string(
+                        "overview.module_guide.note",
+                        fallback: "Use this as the map for the left sidebar. The normal path is Nodes -> Credits -> Skills -> Services -> Orders; Graph and Activity can wait."
+                    ))
+                        .foregroundStyle(.secondary)
+
+                    VStack(spacing: 10) {
+                        ForEach(moduleGuideItems) { item in
+                            ModuleGuideRow(item: item) {
+                                store.setSection(item.section)
+                            }
+                        }
+                    }
+                }
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 16)], spacing: 16) {
                     ForEach(store.overviewMetrics) { metric in
@@ -373,6 +507,90 @@ private struct OverviewDetailView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .navigationTitle(store.currentSectionTitle)
+    }
+}
+
+private struct ModuleGuideItem: Identifiable {
+    let section: ConsoleSection
+    let purpose: String
+    let useWhen: String
+
+    var id: String { section.rawValue }
+}
+
+private struct ModuleGuideRow: View {
+    let item: ModuleGuideItem
+    let onOpen: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: item.section.systemImage)
+                .font(.title3)
+                .foregroundStyle(item.section.isAvailableInV1 ? Color.accentColor : .secondary)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(item.section.title)
+                        .font(.headline)
+                    if let badgeTitle = item.section.badgeTitle {
+                        BadgeLabel(text: badgeTitle, tintName: "secondary")
+                    }
+                }
+                Text(item.purpose)
+                    .foregroundStyle(.secondary)
+                Text(AppLocalization.string("overview.module.when_prefix", fallback: "When to use: %@", item.useWhen))
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer(minLength: 12)
+
+            Button(AppLocalization.string("overview.day_one.open", fallback: "Open")) {
+                onOpen()
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct DayOneStep: Identifiable {
+    let id: String
+    let title: String
+    let detail: String
+    let systemImage: String
+    let targetSection: ConsoleSection
+}
+
+private struct DayOneStepRow: View {
+    let step: DayOneStep
+    let onOpen: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: step.systemImage)
+                .font(.title3)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(step.title)
+                    .font(.headline)
+                Text(step.detail)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            Button(AppLocalization.string("overview.day_one.open", fallback: "Open")) {
+                onOpen()
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -954,6 +1172,27 @@ private struct CreditsDetailView: View {
                     ))
                         .font(.footnote)
                         .foregroundStyle(.tertiary)
+                }
+
+                detailCard(AppLocalization.string("credits.card.number_meanings", fallback: "What the numbers mean"), systemImage: "number.circle") {
+                    LabeledContent(
+                        AppLocalization.string("credits.number.current_balance", fallback: "Your current balance"),
+                        value: AppLocalization.string("credits.number.current_balance.value", fallback: "Official account page or `/account/balance`")
+                    )
+                    LabeledContent(
+                        AppLocalization.string("credits.number.node_balance", fallback: "Node-reported balance"),
+                        value: AppLocalization.string("credits.number.node_balance.value", fallback: "Only real connected nodes, never sample data")
+                    )
+                    LabeledContent(
+                        AppLocalization.string("credits.number.premium_target", fallback: "Premium target"),
+                        value: AppLocalization.string("credits.number.premium_target.value", fallback: "A goal line, not your current credits")
+                    )
+                    Text(AppLocalization.string(
+                        "credits.number.note",
+                        fallback: "If the app shows a large target while your account has fewer credits, read it as the gap to unlock the next plan. Credits still settle through EvoMap, not through this app."
+                    ))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 detailCard(AppLocalization.string("credits.card.fast_actions", fallback: "Fast actions"), systemImage: "bolt.circle") {
