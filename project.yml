@@ -1,0 +1,23 @@
+name: EvomapConsole
+options:
+  createIntermediateGroups: true
+targets:
+  EvomapConsole:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: App
+    settings:
+      base:
+      PRODUCT_BUNDLE_IDENTIFIER: dev.evomapconsole.app
+      SWIFT_VERSION: 6.0
+      MARKETING_VERSION: 0.1.0
+      CURRENT_PROJECT_VERSION: 1
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: EvomapConsole
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        AppLastUpdatedAt: "2026-04-23 10:41 UTC"

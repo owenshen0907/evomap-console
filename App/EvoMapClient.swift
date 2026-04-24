@@ -1,0 +1,1936 @@
+import Foundation
+
+protocol EvoMapClientProtocol {
+    func hello(request: EvoMapHelloRequest) async throws -> EvoMapHelloResponse
+    func heartbeat(request: EvoMapHeartbeatRequest) async throws -> EvoMapHeartbeatResponse
+    func accountBalance(request: EvoMapAccountBalanceRequest) async throws -> EvoMapAccountBalanceResponse
+    func listBountyTasks(request: EvoMapBountyTaskListRequest) async throws -> EvoMapBountyTaskListResponse
+    func claimBountyTask(request: EvoMapBountyTaskClaimRequest) async throws -> EvoMapTaskMutationResponse
+    func publishSkill(request: EvoMapSkillStoreMutationRequest) async throws -> EvoMapSkillStoreMutationResponse
+    func updateSkill(request: EvoMapSkillStoreMutationRequest) async throws -> EvoMapSkillStoreMutationResponse
+    func setSkillVisibility(request: EvoMapSkillStoreVisibilityRequest) async throws -> EvoMapSkillStoreMutationResponse
+    func rollbackSkill(request: EvoMapSkillStoreRollbackRequest) async throws -> EvoMapSkillStoreMutationResponse
+    func deleteSkillVersion(request: EvoMapSkillStoreDeleteVersionRequest) async throws -> EvoMapSkillStoreMutationResponse
+    func deleteSkill(request: EvoMapSkillStoreDeleteRequest) async throws -> EvoMapSkillStoreMutationResponse
+    func restoreSkill(request: EvoMapSkillStoreDeleteRequest) async throws -> EvoMapSkillStoreMutationResponse
+    func permanentlyDeleteSkill(request: EvoMapSkillStoreDeleteRequest) async throws -> EvoMapSkillStoreMutationResponse
+    func recycleBin(request: EvoMapSkillStoreRecycleBinRequest) async throws -> EvoMapSkillStoreRecycleBinResponse
+    func skillStoreStatus(baseURL: String) async throws -> EvoMapSkillStorePublicStatusResponse
+    func listSkills(request: EvoMapSkillStoreListRequest) async throws -> EvoMapSkillStoreListResponse
+    func skillDetail(request: EvoMapSkillStoreDetailRequest) async throws -> RemoteSkillDetail
+    func skillVersions(request: EvoMapSkillStoreVersionsRequest) async throws -> EvoMapSkillStoreVersionsResponse
+    func downloadSkill(request: EvoMapSkillStoreDownloadRequest) async throws -> EvoMapSkillStoreDownloadResponse
+    func listServices(request: EvoMapServiceListRequest) async throws -> EvoMapServiceListResponse
+    func searchServices(request: EvoMapServiceSearchRequest) async throws -> EvoMapServiceListResponse
+    func serviceDetail(request: EvoMapServiceDetailRequest) async throws -> RemoteServiceDetail
+    func publishService(request: EvoMapServicePublishRequest) async throws -> EvoMapServiceMutationResponse
+    func updateService(request: EvoMapServiceUpdateRequest) async throws -> EvoMapServiceMutationResponse
+    func archiveService(request: EvoMapServiceArchiveRequest) async throws -> EvoMapServiceMutationResponse
+    func serviceRatings(request: EvoMapServiceRatingsRequest) async throws -> EvoMapServiceRatingsResponse
+    func rateService(request: EvoMapServiceRateRequest) async throws -> EvoMapServiceRateResponse
+    func placeServiceOrder(request: EvoMapServiceOrderRequest) async throws -> RemoteOrderPlacement
+    func orderDetail(request: EvoMapTaskDetailRequest) async throws -> RemoteOrderDetail
+    func acceptOrderSubmission(request: EvoMapTaskAcceptSubmissionRequest) async throws -> EvoMapTaskMutationResponse
+    func knowledgeGraphStatus(request: EvoMapKnowledgeGraphStatusRequest) async throws -> KnowledgeGraphStatusSnapshot
+    func knowledgeGraphMyGraph(request: EvoMapKnowledgeGraphMyGraphRequest) async throws -> KnowledgeGraphSnapshot
+    func queryKnowledgeGraph(request: EvoMapKnowledgeGraphQueryRequest) async throws -> KnowledgeGraphSearchResult
+    func ingestKnowledgeGraph(request: EvoMapKnowledgeGraphIngestRequest) async throws -> EvoMapKnowledgeGraphIngestResponse
+}
+
+struct EvoMapHelloRequest {
+    let baseURL: String
+    let senderID: String
+    let payload: EvoMapHelloPayload
+}
+
+struct EvoMapHelloPayload: Encodable {
+    let capabilities: [String: Bool]
+    let model: String
+    let geneCount: Int
+    let capsuleCount: Int
+    let envFingerprint: [String: String]
+    let referrer: String?
+    let identityDoc: String?
+    let constitution: String?
+}
+
+struct EvoMapHeartbeatRequest {
+    let baseURL: String
+    let senderID: String
+    let nodeSecret: String
+    let payload: EvoMapHeartbeatPayload
+}
+
+struct EvoMapHeartbeatPayload: Encodable {
+    let nodeID: String
+    let senderID: String
+    let geneCount: Int
+    let capsuleCount: Int
+    let envFingerprint: [String: String]
+    let fingerprint: [String: String]
+    let workerEnabled: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case nodeID = "node_id"
+        case senderID = "sender_id"
+        case geneCount = "gene_count"
+        case capsuleCount = "capsule_count"
+        case envFingerprint = "env_fingerprint"
+        case fingerprint
+        case workerEnabled = "worker_enabled"
+    }
+}
+
+struct EvoMapAccountBalanceRequest {
+    let baseURL: String
+    let apiKey: String
+}
+
+struct EvoMapBountyTaskListRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let minBounty: Int
+    let limit: Int
+}
+
+struct EvoMapBountyTaskClaimRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let payload: EvoMapBountyTaskClaimPayload
+}
+
+struct EvoMapSkillStoreMutationRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let payload: EvoMapSkillStoreMutationPayload
+}
+
+struct EvoMapSkillStoreListRequest {
+    let baseURL: String
+    let keyword: String?
+    let page: Int
+    let limit: Int
+    let sort: String?
+    let featured: Bool?
+}
+
+struct EvoMapSkillStoreDetailRequest {
+    let baseURL: String
+    let skillID: String
+}
+
+struct EvoMapSkillStoreVersionsRequest {
+    let baseURL: String
+    let skillID: String
+}
+
+struct EvoMapSkillStoreDownloadRequest {
+    let baseURL: String
+    let skillID: String
+    let senderID: String
+    let nodeSecret: String
+}
+
+struct EvoMapSkillStoreVisibilityRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let payload: EvoMapSkillStoreVisibilityPayload
+}
+
+struct EvoMapSkillStoreRollbackRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let payload: EvoMapSkillStoreRollbackPayload
+}
+
+struct EvoMapSkillStoreDeleteVersionRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let payload: EvoMapSkillStoreDeleteVersionPayload
+}
+
+struct EvoMapSkillStoreDeleteRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let payload: EvoMapSkillStoreDeletePayload
+}
+
+struct EvoMapSkillStoreRecycleBinRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let payload: EvoMapSkillStoreRecycleBinPayload
+}
+
+struct EvoMapServiceListRequest {
+    let baseURL: String
+}
+
+struct EvoMapServiceSearchRequest {
+    let baseURL: String
+    let query: String
+}
+
+struct EvoMapServiceDetailRequest {
+    let baseURL: String
+    let listingID: String
+}
+
+struct EvoMapServicePublishRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let payload: EvoMapServicePublishPayload
+}
+
+struct EvoMapServiceUpdateRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let payload: EvoMapServiceUpdatePayload
+}
+
+struct EvoMapServiceArchiveRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let payload: EvoMapServiceArchivePayload
+}
+
+struct EvoMapServiceRatingsRequest {
+    let baseURL: String
+    let listingID: String
+    let page: Int?
+    let limit: Int?
+}
+
+struct EvoMapServiceRateRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let payload: EvoMapServiceRatePayload
+}
+
+struct EvoMapServiceOrderRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let payload: EvoMapServiceOrderPayload
+}
+
+struct EvoMapTaskDetailRequest {
+    let baseURL: String
+    let taskID: String
+    let nodeSecret: String
+}
+
+struct EvoMapTaskAcceptSubmissionRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let payload: EvoMapTaskAcceptSubmissionPayload
+}
+
+struct EvoMapKnowledgeGraphStatusRequest {
+    let baseURL: String
+    let apiKey: String
+}
+
+struct EvoMapKnowledgeGraphMyGraphRequest {
+    let baseURL: String
+    let apiKey: String
+}
+
+struct EvoMapKnowledgeGraphQueryRequest {
+    let baseURL: String
+    let apiKey: String
+    let payload: EvoMapKnowledgeGraphQueryPayload
+}
+
+struct EvoMapKnowledgeGraphIngestRequest {
+    let baseURL: String
+    let apiKey: String
+    let payload: EvoMapKnowledgeGraphIngestPayload
+}
+
+struct EvoMapSkillStoreMutationPayload: Encodable {
+    struct BundledFile: Encodable {
+        let name: String
+        let content: String
+    }
+
+    let senderID: String
+    let skillID: String
+    let content: String
+    let category: String?
+    let tags: [String]
+    let bundledFiles: [BundledFile]?
+    let changelog: String?
+
+    enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+        case skillID = "skill_id"
+        case content
+        case category
+        case tags
+        case bundledFiles = "bundled_files"
+        case changelog
+    }
+}
+
+struct EvoMapSkillStoreDownloadPayload: Encodable {
+    let senderID: String
+
+    enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+    }
+}
+
+struct EvoMapSkillStoreVisibilityPayload: Encodable {
+    let senderID: String
+    let skillID: String
+    let visibility: String
+
+    enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+        case skillID = "skill_id"
+        case visibility
+    }
+}
+
+struct EvoMapSkillStoreRollbackPayload: Encodable {
+    let senderID: String
+    let skillID: String
+    let version: String
+
+    enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+        case skillID = "skill_id"
+        case version
+    }
+}
+
+struct EvoMapSkillStoreDeleteVersionPayload: Encodable {
+    let senderID: String
+    let skillID: String
+    let version: String
+
+    enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+        case skillID = "skill_id"
+        case version
+    }
+}
+
+struct EvoMapSkillStoreDeletePayload: Encodable {
+    let senderID: String
+    let skillID: String
+
+    enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+        case skillID = "skill_id"
+    }
+}
+
+struct EvoMapSkillStoreRecycleBinPayload: Encodable {
+    let senderID: String
+    let page: Int?
+    let limit: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+        case page
+        case limit
+    }
+}
+
+struct EvoMapServicePublishPayload: Encodable {
+    let senderID: String
+    let title: String
+    let description: String
+    let capabilities: [String]
+    let pricePerTask: Int
+    let maxConcurrent: Int
+    let useCases: [String]
+    let recipeID: String?
+    let status: String?
+
+    enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+        case title
+        case description
+        case capabilities
+        case pricePerTask = "price_per_task"
+        case maxConcurrent = "max_concurrent"
+        case useCases = "use_cases"
+        case recipeID = "recipe_id"
+        case status
+    }
+}
+
+struct EvoMapServiceUpdatePayload: Encodable {
+    let senderID: String
+    let listingID: String
+    let title: String?
+    let description: String?
+    let capabilities: [String]?
+    let pricePerTask: Int?
+    let maxConcurrent: Int?
+    let useCases: [String]?
+    let recipeID: String?
+    let status: String?
+
+    enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+        case listingID = "listing_id"
+        case title
+        case description
+        case capabilities
+        case pricePerTask = "price_per_task"
+        case maxConcurrent = "max_concurrent"
+        case useCases = "use_cases"
+        case recipeID = "recipe_id"
+        case status
+    }
+}
+
+struct EvoMapServiceArchivePayload: Encodable {
+    let senderID: String
+    let listingID: String
+
+    enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+        case listingID = "listing_id"
+    }
+}
+
+struct EvoMapServiceRatePayload: Encodable {
+    let senderID: String
+    let listingID: String
+    let rating: Int
+    let taskID: String?
+    let comment: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+        case listingID = "listing_id"
+        case rating
+        case taskID = "task_id"
+        case comment
+        case review
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(senderID, forKey: .senderID)
+        try container.encode(listingID, forKey: .listingID)
+        try container.encode(rating, forKey: .rating)
+        try container.encodeIfPresent(taskID, forKey: .taskID)
+        if let comment {
+            try container.encode(comment, forKey: .comment)
+            try container.encode(comment, forKey: .review)
+        }
+    }
+}
+
+struct EvoMapServiceOrderPayload: Encodable {
+    let senderID: String
+    let listingID: String
+    let question: String
+
+    enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+        case listingID = "listing_id"
+        case question
+    }
+}
+
+struct EvoMapTaskAcceptSubmissionPayload: Encodable {
+    let senderID: String
+    let taskID: String
+    let submissionID: String
+
+    enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+        case taskID = "task_id"
+        case submissionID = "submission_id"
+    }
+}
+
+struct EvoMapBountyTaskClaimPayload: Encodable {
+    let senderID: String
+    let taskID: String
+
+    enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+        case taskID = "task_id"
+    }
+}
+
+struct EvoMapKnowledgeGraphQueryPayload: Encodable {
+    let query: String
+    let type: String
+}
+
+struct EvoMapKnowledgeGraphIngestPayload: Encodable {
+    struct Entity: Encodable {
+        let name: String
+        let type: String
+        let description: String
+
+        private enum CodingKeys: String, CodingKey {
+            case name
+            case type
+            case entityType = "entity_type"
+            case description
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(name, forKey: .name)
+            try container.encode(type, forKey: .type)
+            try container.encode(type, forKey: .entityType)
+            try container.encode(description, forKey: .description)
+        }
+    }
+
+    struct Relationship: Encodable {
+        let sourceName: String
+        let relation: String
+        let targetName: String
+
+        private enum CodingKeys: String, CodingKey {
+            case source
+            case from
+            case sourceName = "source_name"
+            case target
+            case to
+            case targetName = "target_name"
+            case relation
+            case relationship
+            case type
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(sourceName, forKey: .source)
+            try container.encode(sourceName, forKey: .from)
+            try container.encode(sourceName, forKey: .sourceName)
+            try container.encode(targetName, forKey: .target)
+            try container.encode(targetName, forKey: .to)
+            try container.encode(targetName, forKey: .targetName)
+            try container.encode(relation, forKey: .relation)
+            try container.encode(relation, forKey: .relationship)
+            try container.encode(relation, forKey: .type)
+        }
+    }
+
+    let entities: [Entity]
+    let relationships: [Relationship]
+
+    private enum CodingKeys: String, CodingKey {
+        case entities
+        case relationships
+        case relations
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if entities.isEmpty == false {
+            try container.encode(entities, forKey: .entities)
+        }
+        if relationships.isEmpty == false {
+            try container.encode(relationships, forKey: .relationships)
+            try container.encode(relationships, forKey: .relations)
+        }
+    }
+}
+
+struct A2AMessageEnvelope<Payload: Encodable>: Encodable {
+    let protocolName = "gep-a2a"
+    let protocolVersion = "1.0.0"
+    let messageType: String
+    let messageID: String
+    let senderID: String
+    let timestamp: String
+    let payload: Payload
+
+    enum CodingKeys: String, CodingKey {
+        case protocolName = "protocol"
+        case protocolVersion = "protocol_version"
+        case messageType = "message_type"
+        case messageID = "message_id"
+        case senderID = "sender_id"
+        case timestamp
+        case payload
+    }
+}
+
+struct EvoMapHelloResponse: Decodable {
+    let status: String
+    let yourNodeID: String
+    let hubNodeID: String?
+    let nodeSecret: String?
+    let nodeSecretStatus: String?
+    let claimCode: String?
+    let claimURL: String?
+    let creditBalance: Int?
+    let survivalStatus: String?
+    let referralCode: String?
+    let recommendedTasks: [EvoMapTaskSummary]?
+    let networkManifest: EvoMapNetworkManifest?
+    let migratedFrom: String?
+    let mergeHint: String?
+    let heartbeatIntervalMS: Int?
+    let heartbeatEndpoint: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case yourNodeID = "your_node_id"
+        case hubNodeID = "hub_node_id"
+        case nodeSecret = "node_secret"
+        case nodeSecretStatus = "node_secret_status"
+        case claimCode = "claim_code"
+        case claimURL = "claim_url"
+        case creditBalance = "credit_balance"
+        case survivalStatus = "survival_status"
+        case referralCode = "referral_code"
+        case recommendedTasks = "recommended_tasks"
+        case networkManifest = "network_manifest"
+        case migratedFrom = "migrated_from"
+        case mergeHint = "merge_hint"
+        case heartbeatIntervalMS = "heartbeat_interval_ms"
+        case heartbeatEndpoint = "heartbeat_endpoint"
+    }
+}
+
+struct EvoMapTaskSummary: Decodable, Hashable {
+    let taskID: String?
+    let title: String?
+    let summary: String?
+    let bountyCredits: Int?
+    let rewardCredits: Int?
+    let domain: String?
+    let kind: String?
+
+    enum CodingKeys: String, CodingKey {
+        case taskID = "task_id"
+        case title
+        case summary
+        case bountyCredits = "bounty_credits"
+        case rewardCredits = "reward_credits"
+        case domain
+        case kind
+    }
+}
+
+struct EvoMapNetworkManifest: Decodable, Hashable {
+    let name: String?
+    let connect: String?
+}
+
+struct EvoMapHeartbeatResponse: Decodable {
+    let status: String?
+    let creditBalance: Int?
+    let survivalStatus: String?
+    let nextHeartbeatMS: Int?
+    let availableTasks: [EvoMapTaskSummary]?
+    let availableWork: [EvoMapTaskSummary]?
+    let overdueTasks: [EvoMapOverdueTask]?
+    let pendingEvents: [EvoMapPendingEvent]?
+    let peers: [EvoMapPeer]?
+    let accountability: EvoMapAccountability?
+    let skillStore: EvoMapSkillStoreStatus?
+    let message: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case creditBalance = "credit_balance"
+        case survivalStatus = "survival_status"
+        case nextHeartbeatMS = "next_heartbeat_ms"
+        case availableTasks = "available_tasks"
+        case availableWork = "available_work"
+        case overdueTasks = "overdue_tasks"
+        case pendingEvents = "pending_events"
+        case peers
+        case accountability
+        case skillStore = "skill_store"
+        case message
+    }
+}
+
+struct EvoMapAccountBalanceResponse: Decodable, Hashable {
+    let balance: Int?
+    let availableCredits: Int?
+    let pendingCredits: Int?
+    let totalEarnedCredits: Int?
+    let planName: String?
+    let status: String?
+    let message: String?
+    let updatedAt: String?
+
+    var bestBalance: Int? {
+        balance ?? availableCredits
+    }
+
+    init(from decoder: Decoder) throws {
+        let root = try JSONValue(from: decoder)
+        balance = root.recursiveInt(forKeys: [
+            "balance", "credit_balance", "credits", "current_balance", "account_balance",
+        ])
+        availableCredits = root.recursiveInt(forKeys: [
+            "available_credits", "available", "available_balance", "spendable_credits",
+        ])
+        pendingCredits = root.recursiveInt(forKeys: [
+            "pending_credits", "pending", "pending_balance",
+        ])
+        totalEarnedCredits = root.recursiveInt(forKeys: [
+            "total_earned_credits", "earned_credits", "total_earned", "lifetime_credits",
+        ])
+        planName = root.recursiveString(forKeys: ["plan", "plan_name", "tier", "membership"])
+        status = root.recursiveString(forKeys: ["status"])
+        message = root.recursiveString(forKeys: ["message", "detail", "reason"])
+        updatedAt = root.recursiveString(forKeys: ["updated_at", "synced_at", "timestamp"])
+    }
+}
+
+struct EvoMapBountyTaskListResponse: Decodable {
+    let tasks: [EvoMapBountyTask]
+    let status: String?
+    let message: String?
+
+    init(from decoder: Decoder) throws {
+        let root = try JSONValue(from: decoder)
+        let taskValues = root.recursiveArray(forKeys: [
+            "tasks", "available_tasks", "bounties", "items", "results", "data",
+        ]) ?? root.arrayValue ?? []
+
+        tasks = taskValues.enumerated().map { index, value in
+            EvoMapBountyTask(value: value, fallbackIndex: index)
+        }
+        status = root.recursiveString(forKeys: ["status"])
+        message = root.recursiveString(forKeys: ["message", "detail", "reason"])
+    }
+}
+
+struct EvoMapBountyTask: Identifiable, Hashable {
+    let taskID: String
+    let title: String
+    let summary: String?
+    let bountyCredits: Int?
+    let rewardCredits: Int?
+    let domain: String?
+    let kind: String?
+    let status: String?
+    let createdAt: String?
+    let deadline: String?
+
+    var id: String {
+        taskID
+    }
+
+    var displayCredits: Int? {
+        bountyCredits ?? rewardCredits
+    }
+
+    fileprivate init(value: JSONValue, fallbackIndex: Int) {
+        taskID = value.recursiveString(forKeys: ["task_id", "id", "taskID"])
+            ?? "bounty-task-\(fallbackIndex + 1)"
+        title = value.recursiveString(forKeys: ["title", "question", "name"])
+            ?? taskID
+        summary = value.recursiveString(forKeys: ["summary", "description", "body", "prompt"])
+        bountyCredits = value.recursiveInt(forKeys: ["bounty_credits", "bounty", "bountyCredits"])
+        rewardCredits = value.recursiveInt(forKeys: ["reward_credits", "reward", "credits", "price"])
+        domain = value.recursiveString(forKeys: ["domain", "category", "topic"])
+        kind = value.recursiveString(forKeys: ["kind", "type"])
+        status = value.recursiveString(forKeys: ["status", "state"])
+        createdAt = value.recursiveString(forKeys: ["created_at", "createdAt"])
+        deadline = value.recursiveString(forKeys: ["deadline", "due_at", "expires_at", "commitment_deadline"])
+    }
+}
+
+struct EvoMapSkillStoreStatus: Decodable, Hashable {
+    let eligible: Bool?
+    let publishedSkills: Int?
+    let publishEndpoint: String?
+    let hint: String?
+
+    enum CodingKeys: String, CodingKey {
+        case eligible
+        case publishedSkills = "published_skills"
+        case publishEndpoint = "publish_endpoint"
+        case hint
+    }
+}
+
+struct EvoMapSkillStorePublicStatusResponse: Decodable {
+    let enabled: Bool
+}
+
+struct EvoMapSkillStoreListResponse: Decodable {
+    let skills: [RemoteSkillSummary]
+    let total: Int
+    let totalDownloads: Int?
+    let page: Int
+    let limit: Int
+}
+
+struct EvoMapSkillStoreVersionsResponse: Decodable {
+    let skillId: String
+    let versions: [RemoteSkillVersion]
+}
+
+struct EvoMapSkillStoreMutationResponse: Decodable {
+    let status: String?
+    let message: String?
+    let skillID: String?
+    let version: String?
+    let name: String?
+    let moderationStatus: String?
+    let visibility: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case message
+        case skillID = "skill_id"
+        case version
+        case name
+        case moderationStatus = "moderation_status"
+        case visibility
+        case data
+        case skill
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let dataContainer = try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .data)
+        let skillContainer = try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .skill)
+
+        func decode(_ key: CodingKeys, from container: KeyedDecodingContainer<CodingKeys>?) -> String? {
+            guard let container else { return nil }
+            return try? container.decodeIfPresent(String.self, forKey: key)
+        }
+
+        func decode(_ key: CodingKeys) -> String? {
+            (try? container.decodeIfPresent(String.self, forKey: key))
+                ?? decode(key, from: dataContainer)
+                ?? decode(key, from: skillContainer)
+        }
+
+        status = decode(.status)
+        message = decode(.message)
+        skillID = decode(.skillID)
+        version = decode(.version)
+        name = decode(.name)
+        moderationStatus = decode(.moderationStatus)
+        visibility = decode(.visibility)
+    }
+}
+
+struct EvoMapSkillStoreDownloadResponse: Decodable {
+    struct BundledFile: Decodable, Hashable {
+        let name: String
+        let content: String
+    }
+
+    let skillID: String
+    let name: String?
+    let version: String?
+    let description: String?
+    let category: String?
+    let tags: [String]
+    let content: String
+    let bundledFiles: [BundledFile]
+    let creditCost: Int?
+    let alreadyPurchased: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case skillID = "skill_id"
+        case name
+        case version
+        case description
+        case category
+        case tags
+        case content
+        case bundledFiles = "bundled_files"
+        case creditCost = "credit_cost"
+        case alreadyPurchased = "already_purchased"
+        case data
+        case skill
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let dataContainer = try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .data)
+        let skillContainer = try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .skill)
+
+        func decodeString(_ key: CodingKeys, from container: KeyedDecodingContainer<CodingKeys>?) -> String? {
+            guard let container else { return nil }
+            return try? container.decodeIfPresent(String.self, forKey: key)
+        }
+
+        func decodeString(_ key: CodingKeys) -> String? {
+            (try? container.decodeIfPresent(String.self, forKey: key))
+                ?? decodeString(key, from: dataContainer)
+                ?? decodeString(key, from: skillContainer)
+        }
+
+        func decodeStrings(_ key: CodingKeys, from container: KeyedDecodingContainer<CodingKeys>?) -> [String]? {
+            guard let container else { return nil }
+            return try? container.decodeIfPresent([String].self, forKey: key)
+        }
+
+        func decodeStrings(_ key: CodingKeys) -> [String]? {
+            (try? container.decodeIfPresent([String].self, forKey: key))
+                ?? decodeStrings(key, from: dataContainer)
+                ?? decodeStrings(key, from: skillContainer)
+        }
+
+        func decodeBundledFiles(from container: KeyedDecodingContainer<CodingKeys>?) -> [BundledFile]? {
+            guard let container else { return nil }
+            return try? container.decodeIfPresent([BundledFile].self, forKey: .bundledFiles)
+        }
+
+        func decodeBundledFiles() -> [BundledFile]? {
+            (try? container.decodeIfPresent([BundledFile].self, forKey: .bundledFiles))
+                ?? decodeBundledFiles(from: dataContainer)
+                ?? decodeBundledFiles(from: skillContainer)
+        }
+
+        func decodeInt(_ key: CodingKeys, from container: KeyedDecodingContainer<CodingKeys>?) -> Int? {
+            guard let container else { return nil }
+            return try? container.decodeIfPresent(Int.self, forKey: key)
+        }
+
+        func decodeInt(_ key: CodingKeys) -> Int? {
+            (try? container.decodeIfPresent(Int.self, forKey: key))
+                ?? decodeInt(key, from: dataContainer)
+                ?? decodeInt(key, from: skillContainer)
+        }
+
+        func decodeBool(_ key: CodingKeys, from container: KeyedDecodingContainer<CodingKeys>?) -> Bool? {
+            guard let container else { return nil }
+            return try? container.decodeIfPresent(Bool.self, forKey: key)
+        }
+
+        func decodeBool(_ key: CodingKeys) -> Bool? {
+            (try? container.decodeIfPresent(Bool.self, forKey: key))
+                ?? decodeBool(key, from: dataContainer)
+                ?? decodeBool(key, from: skillContainer)
+        }
+
+        guard let resolvedSkillID = decodeString(.skillID)?.nonEmpty,
+              let resolvedContent = decodeString(.content) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .content,
+                in: container,
+                debugDescription: "The Skill Store download response is missing `skill_id` or `content`."
+            )
+        }
+
+        skillID = resolvedSkillID
+        name = decodeString(.name)
+        version = decodeString(.version)
+        description = decodeString(.description)
+        category = decodeString(.category)
+        tags = decodeStrings(.tags) ?? []
+        content = resolvedContent
+        bundledFiles = decodeBundledFiles() ?? []
+        creditCost = decodeInt(.creditCost)
+        alreadyPurchased = decodeBool(.alreadyPurchased) ?? false
+    }
+}
+
+struct EvoMapSkillStoreRecycleBinResponse: Decodable {
+    let skills: [RecycledSkillSummary]
+    let total: Int?
+    let page: Int?
+    let limit: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case skills
+        case items
+        case entries
+        case total
+        case page
+        case limit
+        case data
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let dataContainer = try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .data)
+
+        func decodeSkills(from container: KeyedDecodingContainer<CodingKeys>?) -> [RecycledSkillSummary]? {
+            guard let container else { return nil }
+            return (try? container.decodeIfPresent([RecycledSkillSummary].self, forKey: .skills))
+                ?? (try? container.decodeIfPresent([RecycledSkillSummary].self, forKey: .items))
+                ?? (try? container.decodeIfPresent([RecycledSkillSummary].self, forKey: .entries))
+        }
+
+        func decodeInt(_ key: CodingKeys, from container: KeyedDecodingContainer<CodingKeys>?) -> Int? {
+            guard let container else { return nil }
+            return try? container.decodeIfPresent(Int.self, forKey: key)
+        }
+
+        skills = decodeSkills(from: container) ?? decodeSkills(from: dataContainer) ?? []
+        total = decodeInt(.total, from: container) ?? decodeInt(.total, from: dataContainer)
+        page = decodeInt(.page, from: container) ?? decodeInt(.page, from: dataContainer)
+        limit = decodeInt(.limit, from: container) ?? decodeInt(.limit, from: dataContainer)
+    }
+}
+
+struct EvoMapServiceListResponse: Decodable {
+    let services: [RemoteServiceSummary]
+    let total: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case services
+        case items
+        case listings
+        case results
+        case data
+        case total
+        case count
+    }
+
+    init(from decoder: Decoder) throws {
+        if let singleValue = try? decoder.singleValueContainer(),
+           let services = try? singleValue.decode([RemoteServiceSummary].self) {
+            self.services = services
+            total = services.count
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let dataContainer = try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .data)
+
+        func decodeServices(from container: KeyedDecodingContainer<CodingKeys>?) -> [RemoteServiceSummary]? {
+            guard let container else { return nil }
+            if let value = try? container.decodeIfPresent([RemoteServiceSummary].self, forKey: .services) {
+                return value
+            }
+            if let value = try? container.decodeIfPresent([RemoteServiceSummary].self, forKey: .items) {
+                return value
+            }
+            if let value = try? container.decodeIfPresent([RemoteServiceSummary].self, forKey: .listings) {
+                return value
+            }
+            if let value = try? container.decodeIfPresent([RemoteServiceSummary].self, forKey: .results) {
+                return value
+            }
+            if let value = try? container.decodeIfPresent([RemoteServiceSummary].self, forKey: .data) {
+                return value
+            }
+            return nil
+        }
+
+        services = decodeServices(from: container)
+            ?? decodeServices(from: dataContainer)
+            ?? []
+
+        let rootTotal = try? container.decodeIfPresent(Int.self, forKey: .total)
+        let rootCount = try? container.decodeIfPresent(Int.self, forKey: .count)
+        let dataTotal = try? dataContainer?.decodeIfPresent(Int.self, forKey: .total)
+        let dataCount = try? dataContainer?.decodeIfPresent(Int.self, forKey: .count)
+        total = rootTotal ?? rootCount ?? dataTotal ?? dataCount ?? services.count
+    }
+}
+
+struct EvoMapServiceMutationResponse: Decodable {
+    let status: String?
+    let message: String?
+    let listingID: String?
+    let title: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case status
+        case message
+        case listingID = "listing_id"
+        case id
+        case title
+        case data
+        case service
+        case listing
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let dataContainer = try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .data)
+        let rootServiceContainer = try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .service)
+        let dataServiceContainer = try? dataContainer?.nestedContainer(keyedBy: CodingKeys.self, forKey: .service)
+        let serviceContainer = rootServiceContainer ?? dataServiceContainer
+        let rootListingContainer = try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .listing)
+        let dataListingContainer = try? dataContainer?.nestedContainer(keyedBy: CodingKeys.self, forKey: .listing)
+        let nestedListingContainer = try? serviceContainer?.nestedContainer(keyedBy: CodingKeys.self, forKey: .listing)
+        let listingContainer = rootListingContainer ?? dataListingContainer ?? nestedListingContainer
+
+        func decode(_ key: CodingKeys, from container: KeyedDecodingContainer<CodingKeys>?) -> String? {
+            guard let container else { return nil }
+            return (try? container.decodeIfPresent(String.self, forKey: key))
+                ?? (key == .listingID ? (try? container.decodeIfPresent(String.self, forKey: .id)) : nil)
+        }
+
+        func decode(_ key: CodingKeys) -> String? {
+            decode(key, from: container)
+                ?? decode(key, from: dataContainer)
+                ?? decode(key, from: serviceContainer)
+                ?? decode(key, from: listingContainer)
+        }
+
+        status = decode(.status)
+        message = decode(.message)
+        listingID = decode(.listingID)
+        title = decode(.title)
+    }
+}
+
+struct EvoMapServiceRatingsResponse: Decodable {
+    let ratings: [RemoteServiceRating]
+    let total: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case ratings
+        case items
+        case results
+        case reviews
+        case data
+        case total
+        case count
+    }
+
+    init(from decoder: Decoder) throws {
+        if let singleValue = try? decoder.singleValueContainer(),
+           let ratings = try? singleValue.decode([RemoteServiceRating].self) {
+            self.ratings = ratings
+            total = ratings.count
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let dataContainer = try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .data)
+
+        func decodeRatings(from container: KeyedDecodingContainer<CodingKeys>?) -> [RemoteServiceRating]? {
+            guard let container else { return nil }
+            if let value = try? container.decodeIfPresent([RemoteServiceRating].self, forKey: .ratings) {
+                return value
+            }
+            if let value = try? container.decodeIfPresent([RemoteServiceRating].self, forKey: .items) {
+                return value
+            }
+            if let value = try? container.decodeIfPresent([RemoteServiceRating].self, forKey: .results) {
+                return value
+            }
+            if let value = try? container.decodeIfPresent([RemoteServiceRating].self, forKey: .reviews) {
+                return value
+            }
+            if let value = try? container.decodeIfPresent([RemoteServiceRating].self, forKey: .data) {
+                return value
+            }
+            return nil
+        }
+
+        ratings = decodeRatings(from: container)
+            ?? decodeRatings(from: dataContainer)
+            ?? []
+
+        let rootTotal = try? container.decodeIfPresent(Int.self, forKey: .total)
+        let rootCount = try? container.decodeIfPresent(Int.self, forKey: .count)
+        let dataTotal = try? dataContainer?.decodeIfPresent(Int.self, forKey: .total)
+        let dataCount = try? dataContainer?.decodeIfPresent(Int.self, forKey: .count)
+        total = rootTotal ?? rootCount ?? dataTotal ?? dataCount ?? ratings.count
+    }
+}
+
+struct EvoMapServiceRateResponse: Decodable {
+    let status: String?
+    let message: String?
+    let listingID: String?
+    let ratingID: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case status
+        case message
+        case listingID = "listing_id"
+        case ratingID = "rating_id"
+        case id
+        case data
+        case rating
+        case review
+        case service
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let dataContainer = try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .data)
+        let ratingContainer = (try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .rating))
+            ?? (try? dataContainer?.nestedContainer(keyedBy: CodingKeys.self, forKey: .rating))
+            ?? (try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .review))
+            ?? (try? dataContainer?.nestedContainer(keyedBy: CodingKeys.self, forKey: .review))
+
+        func decode(_ key: CodingKeys, from container: KeyedDecodingContainer<CodingKeys>?) -> String? {
+            guard let container else { return nil }
+            return (try? container.decodeIfPresent(String.self, forKey: key))
+                ?? (key == .ratingID ? (try? container.decodeIfPresent(String.self, forKey: .id)) : nil)
+        }
+
+        func decode(_ key: CodingKeys) -> String? {
+            decode(key, from: container)
+                ?? decode(key, from: dataContainer)
+                ?? decode(key, from: ratingContainer)
+        }
+
+        status = decode(.status)
+        message = decode(.message)
+        listingID = decode(.listingID)
+        ratingID = decode(.ratingID)
+    }
+}
+
+struct EvoMapTaskMutationResponse: Decodable {
+    let status: String?
+    let message: String?
+    let taskID: String?
+    let submissionID: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case status
+        case message
+        case taskID = "task_id"
+        case submissionID = "submission_id"
+        case id
+        case data
+        case task
+        case order
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let dataContainer = try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .data)
+        let taskContainer = (try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .task))
+            ?? (try? dataContainer?.nestedContainer(keyedBy: CodingKeys.self, forKey: .task))
+            ?? (try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .order))
+            ?? (try? dataContainer?.nestedContainer(keyedBy: CodingKeys.self, forKey: .order))
+
+        func decode(_ key: CodingKeys, from container: KeyedDecodingContainer<CodingKeys>?) -> String? {
+            guard let container else { return nil }
+            return (try? container.decodeIfPresent(String.self, forKey: key))
+                ?? (key == .taskID ? (try? container.decodeIfPresent(String.self, forKey: .id)) : nil)
+        }
+
+        func decode(_ key: CodingKeys) -> String? {
+            decode(key, from: container)
+                ?? decode(key, from: dataContainer)
+                ?? decode(key, from: taskContainer)
+        }
+
+        status = decode(.status)
+        message = decode(.message)
+        taskID = decode(.taskID)
+        submissionID = decode(.submissionID)
+    }
+}
+
+struct EvoMapKnowledgeGraphIngestResponse: Decodable {
+    let status: String?
+    let message: String?
+    let entitiesWritten: Int?
+    let relationshipsWritten: Int?
+
+    init(from decoder: Decoder) throws {
+        let root = try JSONValue(from: decoder)
+        let containers = [
+            root.value(at: ["data"]),
+            root.value(at: ["result"]),
+            root,
+        ]
+        .compactMap { $0 }
+
+        status = KnowledgeGraphFieldDecoder.string(
+            keys: ["status"],
+            preferred: containers,
+            recursive: containers
+        )
+        message = KnowledgeGraphFieldDecoder.string(
+            keys: ["message", "detail", "note"],
+            preferred: containers,
+            recursive: containers
+        )
+        entitiesWritten = KnowledgeGraphFieldDecoder.int(
+            keys: ["entities_written", "entity_count", "entities", "written_entities"],
+            preferred: containers,
+            recursive: containers
+        )
+        relationshipsWritten = KnowledgeGraphFieldDecoder.int(
+            keys: ["relationships_written", "relation_count", "relations_written", "written_relations"],
+            preferred: containers,
+            recursive: containers
+        )
+    }
+}
+
+private enum KnowledgeGraphFieldDecoder {
+    static func string(keys: [String], preferred: [JSONValue], recursive: [JSONValue]) -> String? {
+        for container in preferred {
+            if let value = container.directString(forKeys: keys)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               value.isEmpty == false {
+                return value
+            }
+        }
+        for container in recursive {
+            if let value = container.recursiveString(forKeys: keys)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               value.isEmpty == false {
+                return value
+            }
+        }
+        return nil
+    }
+
+    static func int(keys: [String], preferred: [JSONValue], recursive: [JSONValue]) -> Int? {
+        for container in preferred {
+            if let value = container.directInt(forKeys: keys) {
+                return value
+            }
+        }
+        for container in recursive {
+            if let value = container.recursiveInt(forKeys: keys) {
+                return value
+            }
+        }
+        return nil
+    }
+}
+
+private extension JSONValue {
+    var objectValue: [String: JSONValue]? {
+        guard case .object(let value) = self else { return nil }
+        return value
+    }
+
+    var arrayValue: [JSONValue]? {
+        guard case .array(let value) = self else { return nil }
+        return value
+    }
+
+    var childValues: [JSONValue] {
+        switch self {
+        case .object(let value):
+            return Array(value.values)
+        case .array(let value):
+            return value
+        default:
+            return []
+        }
+    }
+
+    func value(at path: [String]) -> JSONValue? {
+        guard path.isEmpty == false else { return self }
+        var current: JSONValue? = self
+        for key in path {
+            guard let object = current?.objectValue else { return nil }
+            current = object[key]
+        }
+        return current
+    }
+
+    func directString(forKeys keys: [String]) -> String? {
+        for key in keys {
+            if let value = value(at: [key])?.lossyString {
+                return value
+            }
+        }
+        return nil
+    }
+
+    func recursiveString(forKeys keys: [String]) -> String? {
+        if let direct = directString(forKeys: keys) {
+            return direct
+        }
+        for child in childValues {
+            if let value = child.recursiveString(forKeys: keys) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    func directInt(forKeys keys: [String]) -> Int? {
+        for key in keys {
+            if let value = value(at: [key])?.lossyInt {
+                return value
+            }
+        }
+        return nil
+    }
+
+    func recursiveInt(forKeys keys: [String]) -> Int? {
+        if let direct = directInt(forKeys: keys) {
+            return direct
+        }
+        for child in childValues {
+            if let value = child.recursiveInt(forKeys: keys) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    func directArray(forKeys keys: [String]) -> [JSONValue]? {
+        for key in keys {
+            if let value = value(at: [key])?.arrayValue {
+                return value
+            }
+        }
+        return nil
+    }
+
+    func recursiveArray(forKeys keys: [String]) -> [JSONValue]? {
+        if let direct = directArray(forKeys: keys) {
+            return direct
+        }
+        for child in childValues {
+            if let value = child.recursiveArray(forKeys: keys) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    var lossyString: String? {
+        switch self {
+        case .string(let value):
+            return value
+        case .integer(let value):
+            return String(value)
+        case .double(let value):
+            return String(value)
+        case .boolean(let value):
+            return value ? "true" : "false"
+        default:
+            return nil
+        }
+    }
+
+    var lossyInt: Int? {
+        switch self {
+        case .integer(let value):
+            return value
+        case .double(let value):
+            return Int(value.rounded())
+        case .string(let value):
+            return Int(value)
+        default:
+            return nil
+        }
+    }
+}
+
+struct EvoMapOverdueTask: Decodable, Hashable {
+    let taskID: String?
+    let title: String?
+    let commitmentDeadline: Date?
+    let overdueMinutes: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case taskID = "task_id"
+        case title
+        case commitmentDeadline = "commitment_deadline"
+        case overdueMinutes = "overdue_minutes"
+    }
+}
+
+struct EvoMapPendingEvent: Decodable, Hashable {
+    let eventID: String?
+    let type: String?
+    let createdAt: Date?
+    let priority: Int?
+    let payload: JSONValue?
+
+    enum CodingKeys: String, CodingKey {
+        case eventID = "event_id"
+        case type
+        case createdAt = "created_at"
+        case priority
+        case payload
+    }
+}
+
+struct EvoMapPeer: Decodable, Hashable {
+    let nodeID: String?
+    let alias: String?
+    let online: Bool?
+    let reputation: Double?
+    let workload: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case nodeID = "node_id"
+        case alias
+        case online
+        case reputation
+        case workload
+    }
+}
+
+struct EvoMapAccountability: Decodable, Hashable {
+    let reputationPenalty: Int?
+    let quarantineStrikes: Int?
+    let publishCooldownUntil: Date?
+    let recommendation: String?
+    let topPatterns: [EvoMapErrorPattern]?
+
+    enum CodingKeys: String, CodingKey {
+        case reputationPenalty = "reputation_penalty"
+        case quarantineStrikes = "quarantine_strikes"
+        case publishCooldownUntil = "publish_cooldown_until"
+        case recommendation
+        case topPatterns = "top_patterns"
+        case errorPatterns = "error_patterns"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        reputationPenalty = try container.decodeIfPresent(Int.self, forKey: .reputationPenalty)
+        quarantineStrikes = try container.decodeIfPresent(Int.self, forKey: .quarantineStrikes)
+        publishCooldownUntil = try container.decodeIfPresent(Date.self, forKey: .publishCooldownUntil)
+        recommendation = try container.decodeIfPresent(String.self, forKey: .recommendation)
+        topPatterns = try container.decodeIfPresent([EvoMapErrorPattern].self, forKey: .topPatterns)
+            ?? (try container.decodeIfPresent([EvoMapErrorPattern].self, forKey: .errorPatterns))
+    }
+}
+
+struct EvoMapErrorPattern: Decodable, Hashable {
+    let fingerprint: String?
+    let count: Int?
+    let escalation: String?
+    let reason: String?
+}
+
+indirect enum JSONValue: Decodable, Hashable {
+    case string(String)
+    case integer(Int)
+    case double(Double)
+    case boolean(Bool)
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .boolean(value)
+        } else if let value = try? container.decode(Int.self) {
+            self = .integer(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .double(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([String: JSONValue].self) {
+            self = .object(value)
+        } else if let value = try? container.decode([JSONValue].self) {
+            self = .array(value)
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported JSON payload value.")
+        }
+    }
+
+    var compactDescription: String {
+        switch self {
+        case .string(let value):
+            return value
+        case .integer(let value):
+            return String(value)
+        case .double(let value):
+            return String(format: "%.2f", value)
+        case .boolean(let value):
+            return value ? "true" : "false"
+        case .object(let value):
+            let renderedKeys = value.keys.sorted().joined(separator: ", ")
+            return renderedKeys.isEmpty ? "{}" : "keys: \(renderedKeys)"
+        case .array(let value):
+            return "\(value.count) item(s)"
+        case .null:
+            return "null"
+        }
+    }
+}
+
+struct EvoMapErrorResponse: Decodable {
+    let error: String?
+    let code: String?
+    let message: String?
+    let reason: String?
+    let detail: String?
+}
+
+enum EvoMapClientError: LocalizedError {
+    case invalidBaseURL(String)
+    case invalidResponse
+    case httpStatus(Int, String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidBaseURL(let baseURL):
+            return "The EvoMap base URL is invalid: \(baseURL)"
+        case .invalidResponse:
+            return "The EvoMap server returned an invalid response."
+        case .httpStatus(let status, let message):
+            return message.isEmpty ? "The EvoMap server returned HTTP \(status)." : "HTTP \(status): \(message)"
+        }
+    }
+}
+
+struct EvoMapClient: EvoMapClientProtocol {
+    private let session: URLSession
+    private let encoder: JSONEncoder
+    private let decoder: JSONDecoder
+
+    init(session: URLSession = .shared) {
+        self.session = session
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        self.encoder = encoder
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let value = try container.decode(String.self)
+            if let parsed = Self.iso8601Fractional.date(from: value) ?? Self.iso8601.date(from: value) {
+                return parsed
+            }
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported date value: \(value)")
+        }
+        self.decoder = decoder
+    }
+
+    func hello(request: EvoMapHelloRequest) async throws -> EvoMapHelloResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/hello")
+        let envelope = A2AMessageEnvelope(
+            messageType: "hello",
+            messageID: Self.makeMessageID(),
+            senderID: request.senderID,
+            timestamp: Self.timestampString(),
+            payload: request.payload
+        )
+
+        return try await performRequest(endpoint: endpoint, body: envelope, bearerToken: nil)
+    }
+
+    func heartbeat(request: EvoMapHeartbeatRequest) async throws -> EvoMapHeartbeatResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/heartbeat")
+        return try await performRequest(endpoint: endpoint, body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func accountBalance(request: EvoMapAccountBalanceRequest) async throws -> EvoMapAccountBalanceResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/account/balance")
+        return try await performGetRequest(endpoint: endpoint, bearerToken: request.apiKey)
+    }
+
+    func listBountyTasks(request: EvoMapBountyTaskListRequest) async throws -> EvoMapBountyTaskListResponse {
+        let endpoint = try makeEndpoint(
+            baseURL: request.baseURL,
+            path: "/a2a/task/list",
+            queryItems: [
+                URLQueryItem(name: "min_bounty", value: String(request.minBounty)),
+                URLQueryItem(name: "limit", value: String(request.limit)),
+            ]
+        )
+        return try await performGetRequest(endpoint: endpoint, bearerToken: request.nodeSecret)
+    }
+
+    func claimBountyTask(request: EvoMapBountyTaskClaimRequest) async throws -> EvoMapTaskMutationResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/task/claim")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func publishSkill(request: EvoMapSkillStoreMutationRequest) async throws -> EvoMapSkillStoreMutationResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/skill/store/publish")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func updateSkill(request: EvoMapSkillStoreMutationRequest) async throws -> EvoMapSkillStoreMutationResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/skill/store/update")
+        return try await performRequest(endpoint: endpoint, method: "PUT", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func setSkillVisibility(request: EvoMapSkillStoreVisibilityRequest) async throws -> EvoMapSkillStoreMutationResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/skill/store/visibility")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func rollbackSkill(request: EvoMapSkillStoreRollbackRequest) async throws -> EvoMapSkillStoreMutationResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/skill/store/rollback")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func deleteSkillVersion(request: EvoMapSkillStoreDeleteVersionRequest) async throws -> EvoMapSkillStoreMutationResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/skill/store/delete-version")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func deleteSkill(request: EvoMapSkillStoreDeleteRequest) async throws -> EvoMapSkillStoreMutationResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/skill/store/delete")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func restoreSkill(request: EvoMapSkillStoreDeleteRequest) async throws -> EvoMapSkillStoreMutationResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/skill/store/restore")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func permanentlyDeleteSkill(request: EvoMapSkillStoreDeleteRequest) async throws -> EvoMapSkillStoreMutationResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/skill/store/permanent-delete")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func recycleBin(request: EvoMapSkillStoreRecycleBinRequest) async throws -> EvoMapSkillStoreRecycleBinResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/skill/store/recycle-bin")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func skillStoreStatus(baseURL: String) async throws -> EvoMapSkillStorePublicStatusResponse {
+        let endpoint = try makeEndpoint(baseURL: baseURL, path: "/a2a/skill/store/status")
+        return try await performGetRequest(endpoint: endpoint)
+    }
+
+    func listSkills(request: EvoMapSkillStoreListRequest) async throws -> EvoMapSkillStoreListResponse {
+        let queryItems = [
+            URLQueryItem(name: "keyword", value: request.keyword?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty),
+            URLQueryItem(name: "page", value: String(request.page)),
+            URLQueryItem(name: "limit", value: String(request.limit)),
+            URLQueryItem(name: "sort", value: request.sort?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty),
+            URLQueryItem(name: "featured", value: request.featured.map { $0 ? "true" : "false" }),
+        ]
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/skill/store/list", queryItems: queryItems)
+        return try await performGetRequest(endpoint: endpoint)
+    }
+
+    func skillDetail(request: EvoMapSkillStoreDetailRequest) async throws -> RemoteSkillDetail {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/skill/store/\(request.skillID)")
+        return try await performGetRequest(endpoint: endpoint)
+    }
+
+    func skillVersions(request: EvoMapSkillStoreVersionsRequest) async throws -> EvoMapSkillStoreVersionsResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/skill/store/\(request.skillID)/versions")
+        return try await performGetRequest(endpoint: endpoint)
+    }
+
+    func downloadSkill(request: EvoMapSkillStoreDownloadRequest) async throws -> EvoMapSkillStoreDownloadResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/skill/store/\(request.skillID)/download")
+        let payload = EvoMapSkillStoreDownloadPayload(senderID: request.senderID)
+        return try await performRequest(endpoint: endpoint, method: "POST", body: payload, bearerToken: request.nodeSecret)
+    }
+
+    func listServices(request: EvoMapServiceListRequest) async throws -> EvoMapServiceListResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/service/list")
+        return try await performGetRequest(endpoint: endpoint)
+    }
+
+    func searchServices(request: EvoMapServiceSearchRequest) async throws -> EvoMapServiceListResponse {
+        let endpoint = try makeEndpoint(
+            baseURL: request.baseURL,
+            path: "/a2a/service/search",
+            queryItems: [URLQueryItem(name: "q", value: request.query.nonEmpty)]
+        )
+        return try await performGetRequest(endpoint: endpoint)
+    }
+
+    func serviceDetail(request: EvoMapServiceDetailRequest) async throws -> RemoteServiceDetail {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/service/\(request.listingID)")
+        return try await performGetRequest(endpoint: endpoint)
+    }
+
+    func publishService(request: EvoMapServicePublishRequest) async throws -> EvoMapServiceMutationResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/service/publish")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func updateService(request: EvoMapServiceUpdateRequest) async throws -> EvoMapServiceMutationResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/service/update")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func archiveService(request: EvoMapServiceArchiveRequest) async throws -> EvoMapServiceMutationResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/service/archive")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func serviceRatings(request: EvoMapServiceRatingsRequest) async throws -> EvoMapServiceRatingsResponse {
+        let endpoint = try makeEndpoint(
+            baseURL: request.baseURL,
+            path: "/a2a/service/\(request.listingID)/ratings",
+            queryItems: [
+                URLQueryItem(name: "page", value: request.page.map(String.init)),
+                URLQueryItem(name: "limit", value: request.limit.map(String.init)),
+            ]
+        )
+        return try await performGetRequest(endpoint: endpoint)
+    }
+
+    func rateService(request: EvoMapServiceRateRequest) async throws -> EvoMapServiceRateResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/service/rate")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func placeServiceOrder(request: EvoMapServiceOrderRequest) async throws -> RemoteOrderPlacement {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/service/order")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func orderDetail(request: EvoMapTaskDetailRequest) async throws -> RemoteOrderDetail {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/task/\(request.taskID)")
+        return try await performGetRequest(endpoint: endpoint, bearerToken: request.nodeSecret)
+    }
+
+    func acceptOrderSubmission(request: EvoMapTaskAcceptSubmissionRequest) async throws -> EvoMapTaskMutationResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/task/accept-submission")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func knowledgeGraphStatus(request: EvoMapKnowledgeGraphStatusRequest) async throws -> KnowledgeGraphStatusSnapshot {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/kg/status")
+        return try await performGetRequest(endpoint: endpoint, bearerToken: request.apiKey)
+    }
+
+    func knowledgeGraphMyGraph(request: EvoMapKnowledgeGraphMyGraphRequest) async throws -> KnowledgeGraphSnapshot {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/kg/my-graph")
+        return try await performGetRequest(endpoint: endpoint, bearerToken: request.apiKey)
+    }
+
+    func queryKnowledgeGraph(request: EvoMapKnowledgeGraphQueryRequest) async throws -> KnowledgeGraphSearchResult {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/kg/query")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.apiKey)
+    }
+
+    func ingestKnowledgeGraph(request: EvoMapKnowledgeGraphIngestRequest) async throws -> EvoMapKnowledgeGraphIngestResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/kg/ingest")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.apiKey)
+    }
+
+    private func performRequest<Response: Decodable, Body: Encodable>(
+        endpoint: URL,
+        method: String = "POST",
+        body: Body,
+        bearerToken: String?
+    ) async throws -> Response {
+        var urlRequest = URLRequest(url: endpoint)
+        urlRequest.httpMethod = method
+        urlRequest.httpBody = try encoder.encode(body)
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+        urlRequest.setValue(Self.makeCorrelationID(), forHTTPHeaderField: "x-correlation-id")
+        if let bearerToken, !bearerToken.isEmpty {
+            urlRequest.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (data, response) = try await session.data(for: urlRequest)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw EvoMapClientError.invalidResponse
+        }
+
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw EvoMapClientError.httpStatus(httpResponse.statusCode, parseErrorMessage(from: data))
+        }
+
+        return try decoder.decode(Response.self, from: data)
+    }
+
+    private func performGetRequest<Response: Decodable>(
+        endpoint: URL,
+        bearerToken: String? = nil
+    ) async throws -> Response {
+        var urlRequest = URLRequest(url: endpoint)
+        urlRequest.httpMethod = "GET"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+        urlRequest.setValue(Self.makeCorrelationID(), forHTTPHeaderField: "x-correlation-id")
+        if let bearerToken, !bearerToken.isEmpty {
+            urlRequest.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (data, response) = try await session.data(for: urlRequest)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw EvoMapClientError.invalidResponse
+        }
+
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw EvoMapClientError.httpStatus(httpResponse.statusCode, parseErrorMessage(from: data))
+        }
+
+        return try decoder.decode(Response.self, from: data)
+    }
+
+    private func makeEndpoint(baseURL: String, path: String) throws -> URL {
+        guard var components = URLComponents(string: baseURL.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = components.scheme,
+              !scheme.isEmpty else {
+            throw EvoMapClientError.invalidBaseURL(baseURL)
+        }
+
+        components.path = normalizedPath(basePath: components.path, append: path)
+        guard let url = components.url else {
+            throw EvoMapClientError.invalidBaseURL(baseURL)
+        }
+
+        return url
+    }
+
+    private func makeEndpoint(baseURL: String, path: String, queryItems: [URLQueryItem]) throws -> URL {
+        guard var components = URLComponents(string: baseURL.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = components.scheme,
+              !scheme.isEmpty else {
+            throw EvoMapClientError.invalidBaseURL(baseURL)
+        }
+
+        components.path = normalizedPath(basePath: components.path, append: path)
+        let filteredItems = queryItems.filter { $0.value?.isEmpty == false }
+        components.queryItems = filteredItems.isEmpty ? nil : filteredItems
+
+        guard let url = components.url else {
+            throw EvoMapClientError.invalidBaseURL(baseURL)
+        }
+
+        return url
+    }
+
+    private func normalizedPath(basePath: String, append: String) -> String {
+        let lhs = basePath.hasSuffix("/") ? String(basePath.dropLast()) : basePath
+        let rhs = append.hasPrefix("/") ? append : "/\(append)"
+        return lhs + rhs
+    }
+
+    private func parseErrorMessage(from data: Data) -> String {
+        if let decoded = try? decoder.decode(EvoMapErrorResponse.self, from: data) {
+            return [decoded.error, decoded.code, decoded.message, decoded.reason, decoded.detail]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: " · ")
+        }
+
+        return String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private static func makeMessageID() -> String {
+        let timestamp = Int(Date().timeIntervalSince1970 * 1000)
+        let suffix = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8)
+        return "msg_\(timestamp)_\(suffix)"
+    }
+
+    private static func makeCorrelationID() -> String {
+        "evomap-console-\(UUID().uuidString.lowercased())"
+    }
+
+    private static func timestampString() -> String {
+        iso8601.string(from: Date())
+    }
+
+    private static let iso8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let iso8601Fractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+}

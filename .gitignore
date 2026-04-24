@@ -1,0 +1,31 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Xcode / Swift
+build/
+DerivedData/
+*.xcworkspace
+xcuserdata/
+*.xcuserstate
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS packaging
+*.app
+*.pkg
+*.dmg
+
+# Logs and local outputs
+*.log
+/tmp/
+.local/
+
+# Python helper caches
+__pycache__/
+*.pyc
+.venv/

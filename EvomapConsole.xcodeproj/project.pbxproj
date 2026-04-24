@@ -1,0 +1,384 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		046A49B34FBEB3BB5A7EA0D1 /* KnowledgeGraphAPIKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352CB7C33EFDD95548371351 /* KnowledgeGraphAPIKeyStore.swift */; };
+		070E68A253A977B96E3BAE2D /* ConsoleSettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26D000928D18712DBDABED29 /* ConsoleSettingsViewModel.swift */; };
+		0B76737E8582BDA5AF481CEA /* SkillImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5756DDBF3E1E99C952AFAF9 /* SkillImportService.swift */; };
+		1640034C4B553F878624F8FD /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = BBD12A9715274AB89A9A4826 /* Localizable.strings */; };
+		539EE5F665F0FE181BB69373 /* EvoMapClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0E3F00CF859B92B9B74C2C /* EvoMapClient.swift */; };
+		609429FEA7AF0CFC37AD25ED /* EvomapConsoleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D90B82048A52C9D8B72D6475 /* EvomapConsoleApp.swift */; };
+		6C2D337B6C5BA372225BC45D /* NodeConnectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB9E67A9C547FB28C60B9E7A /* NodeConnectionSheet.swift */; };
+		75E5950D3EC7D95F1C5E1C6A /* AppLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = F85D4CF4DEB8B5F937E914A6 /* AppLocalization.swift */; };
+		7FF94DCEC8216E45354A0F63 /* NodeSecretStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C49A97FD85D4A02CA3432FD2 /* NodeSecretStore.swift */; };
+		8DC7DF08089A145D8CF40428 /* ConsoleCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = F960F0B99DE38B2A1C68D9E7 /* ConsoleCommands.swift */; };
+		A3C3A771B1D8ABE3695A0480 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CE6C9EAFB88EDD45BF1396D1 /* Assets.xcassets */; };
+		A8BFC24245DE4E531293C675 /* ConsoleModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FC1A230AD0CBDA605A8B79C /* ConsoleModels.swift */; };
+		AA73B20A43BA6C181801D4DE /* ConsoleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8877496C2DB77478F3E568D /* ConsoleStore.swift */; };
+		BF661201FDA096397BDBD19C /* AppBuildMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A5BEE86BDF51551AE285C61 /* AppBuildMetadata.swift */; };
+		DB147954C563B9C12AFEE20B /* ConsoleAppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCA91F4536AC9B22B8B1AFE3 /* ConsoleAppSettings.swift */; };
+		E592BE55412943A47A351536 /* ConsoleSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C08261E7EC4A64636F31DD7B /* ConsoleSettingsView.swift */; };
+		E9C9A308794DE775D449D4A5 /* SkillWorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A4D7C26F88DF1B8E1D1D597 /* SkillWorkspaceStore.swift */; };
+		EE8EC984E98FBBDFCE01ED27 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 760E3EC44127BD7433BDD4FE /* ContentView.swift */; };
+		F1E8D6962EFB6F862A432358 /* OrderWorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0A5479B5ACE96A60D298D4 /* OrderWorkspaceStore.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1A4D7C26F88DF1B8E1D1D597 /* SkillWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillWorkspaceStore.swift; sourceTree = "<group>"; };
+		26D000928D18712DBDABED29 /* ConsoleSettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleSettingsViewModel.swift; sourceTree = "<group>"; };
+		2A5BEE86BDF51551AE285C61 /* AppBuildMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBuildMetadata.swift; sourceTree = "<group>"; };
+		352CB7C33EFDD95548371351 /* KnowledgeGraphAPIKeyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeGraphAPIKeyStore.swift; sourceTree = "<group>"; };
+		35E54D026488ED0ADF1F4B8B /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Localizable.strings; sourceTree = "<group>"; };
+		4B0E3F00CF859B92B9B74C2C /* EvoMapClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvoMapClient.swift; sourceTree = "<group>"; };
+		4FC1A230AD0CBDA605A8B79C /* ConsoleModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleModels.swift; sourceTree = "<group>"; };
+		63F1873EAC95761365699665 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		7295F891CDF8C72A86C6459C /* EvomapConsole.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EvomapConsole.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		760E3EC44127BD7433BDD4FE /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		AB9E67A9C547FB28C60B9E7A /* NodeConnectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeConnectionSheet.swift; sourceTree = "<group>"; };
+		B5756DDBF3E1E99C952AFAF9 /* SkillImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillImportService.swift; sourceTree = "<group>"; };
+		C08261E7EC4A64636F31DD7B /* ConsoleSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleSettingsView.swift; sourceTree = "<group>"; };
+		C49A97FD85D4A02CA3432FD2 /* NodeSecretStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeSecretStore.swift; sourceTree = "<group>"; };
+		C8877496C2DB77478F3E568D /* ConsoleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleStore.swift; sourceTree = "<group>"; };
+		CC2CD3BB818A6D944B12A139 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		CCA91F4536AC9B22B8B1AFE3 /* ConsoleAppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleAppSettings.swift; sourceTree = "<group>"; };
+		CE6C9EAFB88EDD45BF1396D1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		CF0A5479B5ACE96A60D298D4 /* OrderWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderWorkspaceStore.swift; sourceTree = "<group>"; };
+		D90B82048A52C9D8B72D6475 /* EvomapConsoleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvomapConsoleApp.swift; sourceTree = "<group>"; };
+		E0DD51636BFDFF83D6ED21EB /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		F85D4CF4DEB8B5F937E914A6 /* AppLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalization.swift; sourceTree = "<group>"; };
+		F960F0B99DE38B2A1C68D9E7 /* ConsoleCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleCommands.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		6E626C5992706EB6D8D9C233 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				7295F891CDF8C72A86C6459C /* EvomapConsole.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		ABB7223CDCBF955599E0C48B = {
+			isa = PBXGroup;
+			children = (
+				B0A451E0D6AE3EEDCEFF14C9 /* App */,
+				6E626C5992706EB6D8D9C233 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		B0A451E0D6AE3EEDCEFF14C9 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				2A5BEE86BDF51551AE285C61 /* AppBuildMetadata.swift */,
+				F85D4CF4DEB8B5F937E914A6 /* AppLocalization.swift */,
+				CE6C9EAFB88EDD45BF1396D1 /* Assets.xcassets */,
+				CCA91F4536AC9B22B8B1AFE3 /* ConsoleAppSettings.swift */,
+				F960F0B99DE38B2A1C68D9E7 /* ConsoleCommands.swift */,
+				4FC1A230AD0CBDA605A8B79C /* ConsoleModels.swift */,
+				C08261E7EC4A64636F31DD7B /* ConsoleSettingsView.swift */,
+				26D000928D18712DBDABED29 /* ConsoleSettingsViewModel.swift */,
+				C8877496C2DB77478F3E568D /* ConsoleStore.swift */,
+				760E3EC44127BD7433BDD4FE /* ContentView.swift */,
+				4B0E3F00CF859B92B9B74C2C /* EvoMapClient.swift */,
+				D90B82048A52C9D8B72D6475 /* EvomapConsoleApp.swift */,
+				63F1873EAC95761365699665 /* Info.plist */,
+				352CB7C33EFDD95548371351 /* KnowledgeGraphAPIKeyStore.swift */,
+				AB9E67A9C547FB28C60B9E7A /* NodeConnectionSheet.swift */,
+				C49A97FD85D4A02CA3432FD2 /* NodeSecretStore.swift */,
+				CF0A5479B5ACE96A60D298D4 /* OrderWorkspaceStore.swift */,
+				B5756DDBF3E1E99C952AFAF9 /* SkillImportService.swift */,
+				1A4D7C26F88DF1B8E1D1D597 /* SkillWorkspaceStore.swift */,
+				BBD12A9715274AB89A9A4826 /* Localizable.strings */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1AB04B7C9232C50ECEE7ABC7 /* EvomapConsole */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DE6DC869A6D70A2ADAA1DC89 /* Build configuration list for PBXNativeTarget "EvomapConsole" */;
+			buildPhases = (
+				0FB35A552528B4DE33E8A3E0 /* Sources */,
+				895730796F1BAA663D1C5CCE /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = EvomapConsole;
+			packageProductDependencies = (
+			);
+			productName = EvomapConsole;
+			productReference = 7295F891CDF8C72A86C6459C /* EvomapConsole.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1FEF66ABCE624BF1F0EEBAAE /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 855C867A0E82B0D2651ECF60 /* Build configuration list for PBXProject "EvomapConsole" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+				ja,
+				"zh-Hans",
+			);
+			mainGroup = ABB7223CDCBF955599E0C48B;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 6E626C5992706EB6D8D9C233 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1AB04B7C9232C50ECEE7ABC7 /* EvomapConsole */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		895730796F1BAA663D1C5CCE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A3C3A771B1D8ABE3695A0480 /* Assets.xcassets in Resources */,
+				1640034C4B553F878624F8FD /* Localizable.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		0FB35A552528B4DE33E8A3E0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF661201FDA096397BDBD19C /* AppBuildMetadata.swift in Sources */,
+				75E5950D3EC7D95F1C5E1C6A /* AppLocalization.swift in Sources */,
+				DB147954C563B9C12AFEE20B /* ConsoleAppSettings.swift in Sources */,
+				8DC7DF08089A145D8CF40428 /* ConsoleCommands.swift in Sources */,
+				A8BFC24245DE4E531293C675 /* ConsoleModels.swift in Sources */,
+				E592BE55412943A47A351536 /* ConsoleSettingsView.swift in Sources */,
+				070E68A253A977B96E3BAE2D /* ConsoleSettingsViewModel.swift in Sources */,
+				AA73B20A43BA6C181801D4DE /* ConsoleStore.swift in Sources */,
+				EE8EC984E98FBBDFCE01ED27 /* ContentView.swift in Sources */,
+				539EE5F665F0FE181BB69373 /* EvoMapClient.swift in Sources */,
+				609429FEA7AF0CFC37AD25ED /* EvomapConsoleApp.swift in Sources */,
+				046A49B34FBEB3BB5A7EA0D1 /* KnowledgeGraphAPIKeyStore.swift in Sources */,
+				6C2D337B6C5BA372225BC45D /* NodeConnectionSheet.swift in Sources */,
+				7FF94DCEC8216E45354A0F63 /* NodeSecretStore.swift in Sources */,
+				F1E8D6962EFB6F862A432358 /* OrderWorkspaceStore.swift in Sources */,
+				0B76737E8582BDA5AF481CEA /* SkillImportService.swift in Sources */,
+				E9C9A308794DE775D449D4A5 /* SkillWorkspaceStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		BBD12A9715274AB89A9A4826 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				E0DD51636BFDFF83D6ED21EB /* en */,
+				35E54D026488ED0ADF1F4B8B /* ja */,
+				CC2CD3BB818A6D944B12A139 /* zh-Hans */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		529B1979F5A781729E3CB760 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = App/Info.plist;
+				MARKETING_VERSION = 0.1.0;
+				CURRENT_PROJECT_VERSION = 1;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.evomapconsole.app;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		5BF8EBFA6157A335DCBDC59E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		8C2A1AB45B49B5E48623057A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = App/Info.plist;
+				MARKETING_VERSION = 0.1.0;
+				CURRENT_PROJECT_VERSION = 1;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.evomapconsole.app;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		E2DB5218D40E9F255A837EDB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		855C867A0E82B0D2651ECF60 /* Build configuration list for PBXProject "EvomapConsole" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5BF8EBFA6157A335DCBDC59E /* Debug */,
+				E2DB5218D40E9F255A837EDB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		DE6DC869A6D70A2ADAA1DC89 /* Build configuration list for PBXNativeTarget "EvomapConsole" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				529B1979F5A781729E3CB760 /* Debug */,
+				8C2A1AB45B49B5E48623057A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 1FEF66ABCE624BF1F0EEBAAE /* Project object */;
+}
