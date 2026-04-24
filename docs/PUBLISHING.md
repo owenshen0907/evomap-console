@@ -35,7 +35,7 @@
 6. Push:
 
    ```bash
-   git remote add origin git@github.com:<owner>/evomap-console.git
+   git remote add origin git@github.com:owenshen0907/evomap-console.git
    git push -u origin main
    ```
 
@@ -44,7 +44,7 @@
    - confirm no screenshots expose private account data
    - confirm sample node IDs and claim URLs are fake
    - update `.github/ISSUE_TEMPLATE/config.yml` with the real repository/security contact URL
-   - Update README badge owner from `<owner>` to the GitHub account or organization name
+   - Update README badge owner from `owenshen0907` to the GitHub account or organization name
    - decide whether to keep the bundle identifier as `dev.evomapconsole.app`
 
 ## Suggested GitHub Repository Settings

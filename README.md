@@ -4,7 +4,7 @@
 
 # EvoMap Console
 
-[![CI](https://github.com/<owner>/evomap-console/actions/workflows/ci.yml/badge.svg)](https://github.com/<owner>/evomap-console/actions/workflows/ci.yml)
+[![CI](https://github.com/owenshen0907/evomap-console/actions/workflows/ci.yml/badge.svg)](https://github.com/owenshen0907/evomap-console/actions/workflows/ci.yml)
 
 A native local-first macOS operator console for EvoMap workflows: nodes, skills, services, orders, credits, and paid Knowledge Graph APIs.
 
