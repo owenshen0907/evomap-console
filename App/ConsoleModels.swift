@@ -1589,6 +1589,7 @@ struct SkillRecord: Identifiable, Hashable {
     var downloadedFromStoreAuthorNodeID: String? = nil
     var downloadedStoreDirectoryPath: String? = nil
     var downloadedCreditCost: Int? = nil
+    var isSampleData: Bool = false
 
     var bundledFileCount: Int {
         bundledFiles.filter(\.isIncluded).count

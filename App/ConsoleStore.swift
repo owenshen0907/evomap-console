@@ -1105,8 +1105,32 @@ final class ConsoleStore: ObservableObject {
         nodes.filter { $0.isSampleData == false }
     }
 
+    var liveNodeCount: Int {
+        creditReportingNodes.count
+    }
+
     var sampleNodeCount: Int {
         nodes.filter(\.isSampleData).count
+    }
+
+    var liveSkills: [SkillRecord] {
+        skills.filter { $0.isSampleData == false }
+    }
+
+    var liveSkillCount: Int {
+        liveSkills.count
+    }
+
+    var sampleSkillCount: Int {
+        skills.filter(\.isSampleData).count
+    }
+
+    var hasSampleSeedData: Bool {
+        sampleNodeCount > 0 || sampleSkillCount > 0
+    }
+
+    var hasLiveOperationalData: Bool {
+        liveNodeCount > 0 || liveSkillCount > 0
     }
 
     var hasLiveCreditData: Bool {
@@ -1327,17 +1351,17 @@ final class ConsoleStore: ObservableObject {
     }
 
     var overviewMetrics: [OverviewMetric] {
-        let healthyCount = nodes.filter { $0.heartbeat == .healthy }.count
-        let claimedCount = nodes.filter { $0.claimState == .claimed }.count
-        let publishedCount = skills.filter { $0.state == .published }.count
-        let changedCount = skills.filter { $0.state == .changed }.count
+        let healthyCount = creditReportingNodes.filter { $0.heartbeat == .healthy }.count
+        let claimedCount = creditReportingNodes.filter { $0.claimState == .claimed }.count
+        let publishedCount = liveSkills.filter { $0.state == .published }.count
+        let changedCount = liveSkills.filter { $0.state == .changed }.count
         return [
             OverviewMetric(
                 title: AppLocalization.string("overview.metric.healthy_nodes.title", fallback: "Healthy Nodes"),
-                value: "\(healthyCount)/\(nodes.count)",
+                value: "\(healthyCount)/\(liveNodeCount)",
                 detail: AppLocalization.string(
                     "overview.metric.healthy_nodes.detail",
-                    fallback: "Nodes with recent heartbeats and working auth."
+                    fallback: "Real connected nodes with recent heartbeats and working auth. Demo nodes are excluded."
                 ),
                 systemImage: "heart.text.square"
             ),
@@ -1346,7 +1370,7 @@ final class ConsoleStore: ObservableObject {
                 value: "\(claimedCount)",
                 detail: AppLocalization.string(
                     "overview.metric.claimed_nodes.detail",
-                    fallback: "Nodes already bound to your EvoMap account."
+                    fallback: "Real nodes already bound to your EvoMap account. Demo nodes are excluded."
                 ),
                 systemImage: "checkmark.shield"
             ),
@@ -1355,7 +1379,7 @@ final class ConsoleStore: ObservableObject {
                 value: "\(publishedCount)",
                 detail: AppLocalization.string(
                     "overview.metric.published_skills.detail",
-                    fallback: "Skills that match a remote published version."
+                    fallback: "Real local skills that match a remote published version. Demo skills are excluded."
                 ),
                 systemImage: "sparkles"
             ),
@@ -1364,7 +1388,7 @@ final class ConsoleStore: ObservableObject {
                 value: "\(changedCount)",
                 detail: AppLocalization.string(
                     "overview.metric.needs_review.detail",
-                    fallback: "Skills with local changes before the next publish."
+                    fallback: "Real local skills with changes before the next publish. Demo skills are excluded."
                 ),
                 systemImage: "exclamationmark.triangle"
             ),
@@ -1372,8 +1396,10 @@ final class ConsoleStore: ObservableObject {
     }
 
     var recentOverviewEvents: [NodeEvent] {
-        nodes
-            .flatMap(\.recentEvents)
+        let liveEvents = creditReportingNodes.flatMap(\.recentEvents)
+        let sourceEvents = liveEvents.isEmpty ? nodes.flatMap(\.recentEvents) : liveEvents
+
+        return sourceEvents
             .sorted(by: { $0.timestamp > $1.timestamp })
             .prefix(5)
             .map { $0 }
@@ -4975,7 +5001,8 @@ private enum SampleData {
             remoteStatus: "approved",
             lastPublishedAt: Date().addingTimeInterval(-2400),
             lastPublishedBySenderID: "node_demo_primary",
-            lastPublishMessage: "Latest Skill Store version is live."
+            lastPublishMessage: "Latest Skill Store version is live.",
+            isSampleData: true
         ),
         SkillRecord(
             id: UUID(),
@@ -5038,7 +5065,8 @@ private enum SampleData {
             remoteStatus: "approved",
             lastPublishedAt: Date().addingTimeInterval(-86_400),
             lastPublishedBySenderID: "node_demo_primary",
-            lastPublishMessage: "Published version `0.9.0` is still live."
+            lastPublishMessage: "Published version `0.9.0` is still live.",
+            isSampleData: true
         ),
         SkillRecord(
             id: UUID(),
@@ -5076,7 +5104,8 @@ private enum SampleData {
                     title: "Thin validation guidance",
                     detail: "Add a dedicated validation section before this draft is publishable."
                 )
-            ]
+            ],
+            isSampleData: true
         ),
     ]
 }

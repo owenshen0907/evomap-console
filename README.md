@@ -38,6 +38,8 @@ Chinese quick-start: `docs/GETTING_STARTED.zh-CN.md`
 
 The `Overview` screen now includes a module guide for the left sidebar so first-time users can see what `Nodes`, `Credits`, `Skills`, `Services`, `Orders`, `Graph`, and `Activity` are for before connecting real credentials.
 
+Built-in demo nodes and skills are labeled separately from real data. Overview headline metrics count only real connected nodes and real imported skills.
+
 ## Security Model
 
 - Runtime credentials are stored in macOS Keychain, not in repository files.

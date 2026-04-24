@@ -297,6 +297,27 @@ private struct OverviewListView: View {
                 }
             }
 
+            if store.hasSampleSeedData {
+                Section(AppLocalization.string("overview.data_source.title", fallback: "Data source")) {
+                    LabeledContent(
+                        AppLocalization.string("overview.data_source.live_nodes", fallback: "Real nodes"),
+                        value: "\(store.liveNodeCount)"
+                    )
+                    LabeledContent(
+                        AppLocalization.string("overview.data_source.demo_nodes", fallback: "Demo nodes"),
+                        value: "\(store.sampleNodeCount)"
+                    )
+                    LabeledContent(
+                        AppLocalization.string("overview.data_source.live_skills", fallback: "Real skills"),
+                        value: "\(store.liveSkillCount)"
+                    )
+                    LabeledContent(
+                        AppLocalization.string("overview.data_source.demo_skills", fallback: "Demo skills"),
+                        value: "\(store.sampleSkillCount)"
+                    )
+                }
+            }
+
             Section(AppLocalization.string("overview.section.recent_activity", fallback: "Recent activity")) {
                 ForEach(store.recentOverviewEvents) { event in
                     VStack(alignment: .leading, spacing: 4) {
@@ -418,6 +439,48 @@ private struct OverviewDetailView: View {
                     .font(.title3)
                     .foregroundStyle(.secondary)
 
+                if store.hasSampleSeedData {
+                    detailCard(AppLocalization.string("overview.data_source.title", fallback: "Data source"), systemImage: "tray.full") {
+                        Text(AppLocalization.string(
+                            "overview.data_source.note",
+                            fallback: "The built-in demo nodes and skills are only there to show the interface. The headline metrics below count real connected nodes and real imported skills only."
+                        ))
+                            .foregroundStyle(.secondary)
+
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
+                            DataSourcePill(
+                                title: AppLocalization.string("overview.data_source.live_nodes", fallback: "Real nodes"),
+                                value: "\(store.liveNodeCount)",
+                                tintName: store.liveNodeCount > 0 ? "green" : "orange"
+                            )
+                            DataSourcePill(
+                                title: AppLocalization.string("overview.data_source.demo_nodes", fallback: "Demo nodes"),
+                                value: "\(store.sampleNodeCount)",
+                                tintName: "secondary"
+                            )
+                            DataSourcePill(
+                                title: AppLocalization.string("overview.data_source.live_skills", fallback: "Real skills"),
+                                value: "\(store.liveSkillCount)",
+                                tintName: store.liveSkillCount > 0 ? "green" : "orange"
+                            )
+                            DataSourcePill(
+                                title: AppLocalization.string("overview.data_source.demo_skills", fallback: "Demo skills"),
+                                value: "\(store.sampleSkillCount)",
+                                tintName: "secondary"
+                            )
+                        }
+
+                        if store.liveNodeCount == 0 {
+                            Button {
+                                store.prepareNodeConnection()
+                            } label: {
+                                Label(AppLocalization.string("overview.data_source.connect", fallback: "Connect a real node"), systemImage: "server.rack")
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                }
+
                 detailCard(AppLocalization.string("overview.day_one.title", fallback: "Use it today"), systemImage: "map") {
                     Text(AppLocalization.string(
                         "overview.day_one.note",
@@ -507,6 +570,39 @@ private struct OverviewDetailView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .navigationTitle(store.currentSectionTitle)
+    }
+}
+
+private struct DataSourcePill: View {
+    let title: String
+    let value: String
+    let tintName: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            HStack {
+                Text(value)
+                    .font(.title2.weight(.bold))
+                Spacer()
+                BadgeLabel(text: badgeText, tintName: tintName)
+            }
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var badgeText: String {
+        switch tintName {
+        case "green":
+            return AppLocalization.string("overview.data_source.badge_live", fallback: "Live")
+        case "orange":
+            return AppLocalization.string("overview.data_source.badge_missing", fallback: "Missing")
+        default:
+            return AppLocalization.string("overview.data_source.badge_demo", fallback: "Demo")
+        }
     }
 }
 
