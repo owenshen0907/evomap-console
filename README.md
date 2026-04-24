@@ -66,6 +66,7 @@ Run the open-source readiness audit:
 - Brand assets: `docs/BRAND.md`
 - Open-source checklist: `docs/OPEN_SOURCE.md`
 - Publishing guide: `docs/PUBLISHING.md`
+- Changelog: `CHANGELOG.md`
 - UI references: `docs/UI_REFERENCES.md`
 
 ## Repository Structure
