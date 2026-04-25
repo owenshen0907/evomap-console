@@ -21,6 +21,7 @@
 		A3C3A771B1D8ABE3695A0480 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CE6C9EAFB88EDD45BF1396D1 /* Assets.xcassets */; };
 		A8BFC24245DE4E531293C675 /* ConsoleModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FC1A230AD0CBDA605A8B79C /* ConsoleModels.swift */; };
 		AA73B20A43BA6C181801D4DE /* ConsoleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8877496C2DB77478F3E568D /* ConsoleStore.swift */; };
+		B8E1C4D8A6F04B7BAA231910 /* PatchCourierMailBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8E1C4D7A6F04B7BAA231910 /* PatchCourierMailBackend.swift */; };
 		BF661201FDA096397BDBD19C /* AppBuildMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A5BEE86BDF51551AE285C61 /* AppBuildMetadata.swift */; };
 		DB147954C563B9C12AFEE20B /* ConsoleAppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCA91F4536AC9B22B8B1AFE3 /* ConsoleAppSettings.swift */; };
 		E592BE55412943A47A351536 /* ConsoleSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C08261E7EC4A64636F31DD7B /* ConsoleSettingsView.swift */; };
@@ -46,6 +47,7 @@
 		C08261E7EC4A64636F31DD7B /* ConsoleSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleSettingsView.swift; sourceTree = "<group>"; };
 		C49A97FD85D4A02CA3432FD2 /* NodeSecretStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeSecretStore.swift; sourceTree = "<group>"; };
 		C8877496C2DB77478F3E568D /* ConsoleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleStore.swift; sourceTree = "<group>"; };
+		B8E1C4D7A6F04B7BAA231910 /* PatchCourierMailBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchCourierMailBackend.swift; sourceTree = "<group>"; };
 		CC2CD3BB818A6D944B12A139 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		CCA91F4536AC9B22B8B1AFE3 /* ConsoleAppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleAppSettings.swift; sourceTree = "<group>"; };
 		CE6C9EAFB88EDD45BF1396D1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -94,6 +96,7 @@
 				C49A97FD85D4A02CA3432FD2 /* NodeSecretStore.swift */,
 				A21E8D1F2B3C4D5E6F708092 /* NodeWorkspaceStore.swift */,
 				CF0A5479B5ACE96A60D298D4 /* OrderWorkspaceStore.swift */,
+				B8E1C4D7A6F04B7BAA231910 /* PatchCourierMailBackend.swift */,
 				B5756DDBF3E1E99C952AFAF9 /* SkillImportService.swift */,
 				1A4D7C26F88DF1B8E1D1D597 /* SkillWorkspaceStore.swift */,
 				BBD12A9715274AB89A9A4826 /* Localizable.strings */,
@@ -187,6 +190,7 @@
 				7FF94DCEC8216E45354A0F63 /* NodeSecretStore.swift in Sources */,
 				A11E8D1F2B3C4D5E6F708091 /* NodeWorkspaceStore.swift in Sources */,
 				F1E8D6962EFB6F862A432358 /* OrderWorkspaceStore.swift in Sources */,
+				B8E1C4D8A6F04B7BAA231910 /* PatchCourierMailBackend.swift in Sources */,
 				0B76737E8582BDA5AF481CEA /* SkillImportService.swift in Sources */,
 				E9C9A308794DE775D449D4A5 /* SkillWorkspaceStore.swift in Sources */,
 			);
@@ -215,7 +219,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = App/Info.plist;
 				MARKETING_VERSION = 0.1.0;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 22;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.evomapconsole.app;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -295,7 +299,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = App/Info.plist;
 				MARKETING_VERSION = 0.1.0;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 22;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.evomapconsole.app;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

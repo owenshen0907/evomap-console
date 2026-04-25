@@ -104,6 +104,13 @@ final class ConsoleStore: ObservableObject {
     @Published private(set) var isSubmittingBountyAnswer = false
     @Published private(set) var activeBountyClaimTaskID: String?
     @Published private(set) var activeBountySubmissionTaskID: String?
+    @Published var bountyShowsAllLoadedTasks = false {
+        didSet {
+            guard bountyShowsAllLoadedTasks != oldValue else { return }
+            selectedBountyTaskID = preferredBountySelectionID()
+        }
+    }
+    @Published private(set) var locallyClosedBountyTaskIDs: Set<EvoMapBountyTask.ID> = []
     @Published var remoteSkillLoadErrorMessage: String?
     @Published var remoteSkillDetailErrorMessage: String?
     @Published var recycledSkillLoadErrorMessage: String?
@@ -124,6 +131,11 @@ final class ConsoleStore: ObservableObject {
     @Published private(set) var bountyAnswerDraftMessage: String?
     @Published private(set) var bountyAnswerDraftErrorMessage: String?
     @Published private(set) var bountyExecutionMessage: String?
+    @Published private(set) var patchCourierBackendMessage: String?
+    @Published private(set) var patchCourierBackendErrorMessage: String?
+    @Published private(set) var isSendingPatchCourierBackendTask = false
+    @Published private(set) var isCheckingPatchCourierBackendInbox = false
+    @Published private(set) var isPatchCourierBackendPolling = false
     @Published var nodes: [NodeRecord]
     @Published var skills: [SkillRecord]
     @Published private(set) var remoteSkills: [RemoteSkillSummary] = []
@@ -172,8 +184,11 @@ final class ConsoleStore: ObservableObject {
     private let skillWorkspaceStore: SkillWorkspacePersisting
     private let orderWorkspaceStore: OrderWorkspacePersisting
     private let nodeWorkspaceStore: NodeWorkspacePersisting
+    private let patchCourierMailPasswordStore: PatchCourierMailPasswordStoring
+    private let patchCourierMailTransportClient: PatchCourierMailTransportClient
     private var remoteSkillSearchTask: Task<Void, Never>?
     private var serviceSearchTask: Task<Void, Never>?
+    private var patchCourierBackendPollTask: Task<Void, Never>?
     private var nodeHeartbeatCooldownUntil: [NodeRecord.ID: Date] = [:]
 
     private static let minimumManualHeartbeatInterval: TimeInterval = 60
@@ -190,7 +205,9 @@ final class ConsoleStore: ObservableObject {
         skillImportService: SkillImportService = SkillImportService(),
         skillWorkspaceStore: SkillWorkspacePersisting = LocalSkillWorkspaceStore(),
         orderWorkspaceStore: OrderWorkspacePersisting = LocalOrderWorkspaceStore(),
-        nodeWorkspaceStore: NodeWorkspacePersisting = LocalNodeWorkspaceStore()
+        nodeWorkspaceStore: NodeWorkspacePersisting = LocalNodeWorkspaceStore(),
+        patchCourierMailPasswordStore: PatchCourierMailPasswordStoring = KeychainPatchCourierMailPasswordStore(),
+        patchCourierMailTransportClient: PatchCourierMailTransportClient = PatchCourierMailTransportClient()
     ) {
         self.client = client
         self.nodeSecretStore = nodeSecretStore
@@ -198,6 +215,8 @@ final class ConsoleStore: ObservableObject {
         self.skillWorkspaceStore = skillWorkspaceStore
         self.orderWorkspaceStore = orderWorkspaceStore
         self.nodeWorkspaceStore = nodeWorkspaceStore
+        self.patchCourierMailPasswordStore = patchCourierMailPasswordStore
+        self.patchCourierMailTransportClient = patchCourierMailTransportClient
 
         let initialNodes: [NodeRecord]
         let nodeLoadErrorMessage: String?
@@ -238,6 +257,12 @@ final class ConsoleStore: ObservableObject {
         }
 
         refreshStoredSecretFlags()
+    }
+
+    deinit {
+        remoteSkillSearchTask?.cancel()
+        serviceSearchTask?.cancel()
+        patchCourierBackendPollTask?.cancel()
     }
 
     var currentSectionTitle: String {
@@ -1280,8 +1305,12 @@ final class ConsoleStore: ObservableObject {
     }
 
     var selectedBountyTask: EvoMapBountyTask? {
-        guard let selectedBountyTaskID else { return bountyTasks.first }
-        return bountyTasks.first(where: { $0.id == selectedBountyTaskID }) ?? bountyTasks.first
+        guard let selectedBountyTaskID else {
+            return bountyTasks.first(where: { bountyTaskIsDefaultVisible($0) }) ?? bountyTasks.first
+        }
+        return bountyTasks.first(where: { $0.id == selectedBountyTaskID })
+            ?? bountyTasks.first(where: { bountyTaskIsDefaultVisible($0) })
+            ?? bountyTasks.first
     }
 
     var selectedClaimedBountyTask: EvoMapClaimedBountyTask? {
@@ -1294,31 +1323,120 @@ final class ConsoleStore: ObservableObject {
     }
 
     var filteredBountyTasks: [EvoMapBountyTask] {
-        guard searchText.isEmpty == false else {
-            return bountyTasks
+        let tasks: [EvoMapBountyTask]
+        if searchText.isEmpty {
+            tasks = bountyTasks
+        } else {
+            let query = searchText.normalizedSearchKey
+            tasks = bountyTasks.filter { task in
+                bountyTaskMatchesSearch(task, query: query)
+            }
         }
-        let query = searchText.normalizedSearchKey
-        return bountyTasks.filter { task in
-            [
-                task.title,
-                AppLocalization.bountyText(task.title),
-                task.summary,
-                task.domain,
-                task.kind,
-                task.status,
-                task.bountyID,
-                task.questionID,
-                task.claimableTaskID,
-            ]
-            .compactMap { $0 }
-            .joined(separator: " ")
-            .normalizedSearchKey
-            .contains(query)
+
+        return tasks.sorted { lhs, rhs in
+            let lhsClaimable = canSelectedNodeClaimBounty(lhs)
+            let rhsClaimable = canSelectedNodeClaimBounty(rhs)
+            if lhsClaimable != rhsClaimable {
+                return bountyClaimableRank(lhsClaimable) > bountyClaimableRank(rhsClaimable)
+            }
+
+            let lhsCredits = lhs.displayCredits ?? 0
+            let rhsCredits = rhs.displayCredits ?? 0
+            if lhsCredits != rhsCredits {
+                return lhsCredits > rhsCredits
+            }
+
+            let lhsClaimed = isClaimedBountyTask(lhs)
+            let rhsClaimed = isClaimedBountyTask(rhs)
+            if lhsClaimed != rhsClaimed {
+                return lhsClaimed
+            }
+
+            return AppLocalization.bountyText(lhs.title).localizedStandardCompare(AppLocalization.bountyText(rhs.title)) == .orderedAscending
         }
     }
 
+    var visibleBountyTasks: [EvoMapBountyTask] {
+        let baseTasks = bountyShowsAllLoadedTasks ? filteredBountyTasks : defaultClaimableBountyTasks
+        return baseTasks.filter { task in
+            isClaimedBountyTask(task) == false && followedBountyTaskIDs.contains(task.id) == false
+        }
+    }
+
+    var hiddenBountyTaskCount: Int {
+        guard bountyShowsAllLoadedTasks == false else { return 0 }
+        return max(0, filteredBountyTasks.count - defaultClaimableBountyTasks.count)
+    }
+
+    private var defaultClaimableBountyTasks: [EvoMapBountyTask] {
+        filteredBountyTasks.filter { bountyTaskIsDefaultVisible($0) }
+    }
+
+    private func bountyTaskIsDefaultVisible(_ task: EvoMapBountyTask) -> Bool {
+        isClaimedBountyTask(task) || bountyTaskIsClaimableCandidate(task)
+    }
+
+    private func bountyTaskIsClaimableCandidate(_ task: EvoMapBountyTask) -> Bool {
+        guard bountyTaskCanAttemptClaim(task) else { return false }
+        guard canSelectedNodeClaimBounty(task) == true else {
+            return false
+        }
+        return true
+    }
+
+    func bountyTaskCanAttemptClaim(_ task: EvoMapBountyTask) -> Bool {
+        (task.claimableTaskID != nil || task.bountyID?.nonEmpty != nil)
+            && locallyClosedBountyTaskIDs.contains(task.id) == false
+            && bountyTaskStatusAllowsNewClaim(task.status)
+    }
+
+    private func bountyTaskStatusAllowsNewClaim(_ status: String?) -> Bool {
+        guard let status = status?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              status.isEmpty == false else {
+            return true
+        }
+        let openStatuses: Set<String> = [
+            "available",
+            "claimable",
+            "created",
+            "new",
+            "open",
+            "unclaimed",
+        ]
+        return openStatuses.contains(status)
+    }
+
+    private func bountyClaimableRank(_ value: Bool?) -> Int {
+        switch value {
+        case true:
+            return 2
+        case nil:
+            return 1
+        case false:
+            return 0
+        }
+    }
+
+    private func bountyTaskMatchesSearch(_ task: EvoMapBountyTask, query: String) -> Bool {
+        [
+            task.title,
+            AppLocalization.bountyText(task.title),
+            task.summary,
+            task.domain,
+            task.kind,
+            task.status,
+            task.bountyID,
+            task.questionID,
+            task.claimableTaskID,
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
+        .normalizedSearchKey
+        .contains(query)
+    }
+
     var followedBountyTasks: [EvoMapBountyTask] {
-        bountyTasks.filter { followedBountyTaskIDs.contains($0.id) }
+        filteredBountyTasks.filter { followedBountyTaskIDs.contains($0.id) && isClaimedBountyTask($0) == false }
     }
 
     var claimedBountyDisplayTasks: [EvoMapBountyTask] {
@@ -1500,6 +1618,39 @@ final class ConsoleStore: ObservableObject {
         ConsoleAppSettings.patchCourierRelayEmail.nonEmpty != nil
     }
 
+    var patchCourierBackendIsEnabled: Bool {
+        ConsoleAppSettings.patchCourierBackendEnabled
+    }
+
+    var patchCourierBackendIsConfigured: Bool {
+        ConsoleAppSettings.patchCourierBackendAccount != nil
+            && patchCourierRelayEmailIsConfigured
+            && patchCourierBackendPassword()?.nonEmpty != nil
+    }
+
+    var selectedBountyPatchCourierBackendStatusLine: String {
+        if let status = bountyAnswerDraft.patchCourierStatus?.nonEmpty {
+            var parts = [AppLocalization.string("bounties.patch_courier.backend.status_prefix", fallback: "Backend: %@", status)]
+            if let confidence = bountyAnswerDraft.patchCourierConfidence?.nonEmpty {
+                parts.append(AppLocalization.string("bounties.patch_courier.backend.confidence", fallback: "confidence %@", confidence))
+            }
+            if let receivedAt = bountyAnswerDraft.patchCourierReceivedAt {
+                parts.append(AppLocalization.string("bounties.patch_courier.backend.received_at", fallback: "received %@", receivedAt.formatted(date: .abbreviated, time: .shortened)))
+            } else if let sentAt = bountyAnswerDraft.patchCourierSentAt {
+                parts.append(AppLocalization.string("bounties.patch_courier.backend.sent_at", fallback: "sent %@", sentAt.formatted(date: .abbreviated, time: .shortened)))
+            }
+            return parts.joined(separator: " · ")
+        }
+
+        guard patchCourierBackendIsEnabled else {
+            return AppLocalization.string("bounties.patch_courier.backend.disabled", fallback: "Backend mail is off. Enable it in Settings to send and check automatically.")
+        }
+        guard patchCourierBackendIsConfigured else {
+            return AppLocalization.string("bounties.patch_courier.backend.not_configured", fallback: "Backend mail is not fully configured in Settings.")
+        }
+        return AppLocalization.string("bounties.patch_courier.backend.ready", fallback: "Backend mail is ready.")
+    }
+
     var selectedBountyPatchCourierExecuteEmailSubject: String {
         guard let task = selectedBountyTask else { return "" }
         return "[EvoMap][EXECUTE][\(selectedBountyPatchCourierTaskID(for: task))] \(AppLocalization.bountyText(task.title))"
@@ -1514,7 +1665,7 @@ final class ConsoleStore: ObservableObject {
         guard let task = selectedBountyTask else { return "" }
         let claimed = selectedClaimedBountyTask
         let taskID = selectedBountyPatchCourierTaskID(for: task)
-        let requestID = "evomap:\(taskID)"
+        let requestID = selectedBountyPatchCourierRequestID(for: task)
         let payload = selectedBountyPatchCourierPayload(task: task, claimed: claimed, taskID: taskID)
         return """
         PATCH_COURIER_COMMAND: EVOMAP_EXECUTE
@@ -2186,7 +2337,7 @@ final class ConsoleStore: ObservableObject {
         bountyTaskOpenCount = response.openCount
         bountyTaskMatchedCount = response.matchedCount
         bountyTaskCurrentPage = page
-        selectedBountyTaskID = bountyTasks.first(where: { $0.id == selectedBountyTaskID })?.id ?? bountyTasks.first?.id
+        selectedBountyTaskID = preferredBountySelectionID()
         loadSelectedBountyAnswerDraft()
     }
 
@@ -2206,8 +2357,21 @@ final class ConsoleStore: ObservableObject {
            bountyTasks.contains(where: { $0.id == selectedBountyTaskID }) {
             loadSelectedBountyAnswerDraft()
         } else {
-            selectedBountyTaskID = bountyTasks.first?.id
+            selectedBountyTaskID = preferredBountySelectionID()
         }
+    }
+
+    private func preferredBountySelectionID(preservingCurrent: Bool = true, excluding excludedTaskID: String? = nil) -> String? {
+        if let selectedBountyTaskID,
+           selectedBountyTaskID != excludedTaskID,
+           preservingCurrent,
+           let selected = bountyTasks.first(where: { $0.id == selectedBountyTaskID }),
+           bountyShowsAllLoadedTasks || bountyTaskIsDefaultVisible(selected) || followedBountyTaskIDs.contains(selected.id) {
+            return selectedBountyTaskID
+        }
+        return bountyTasks.first(where: { task in
+            task.id != excludedTaskID && bountyTaskIsDefaultVisible(task)
+        })?.id ?? bountyTasks.first(where: { $0.id != excludedTaskID })?.id
     }
 
     private func refreshNodeProfile(for node: NodeRecord) async {
@@ -2256,6 +2420,14 @@ final class ConsoleStore: ObservableObject {
             return
         }
         await refreshNodeProfile(for: node)
+        guard bountyTaskCanAttemptClaim(task) else {
+            bountyTaskErrorMessage = AppLocalization.string(
+                "credits.bounty.error.task_not_open_hint",
+                fallback: "This bounty is not open for claiming now (status: %@). It may already be matched, pending, closed, or stale. Refresh bounties or choose an Open task.",
+                AppLocalization.bountyTerm(task.status) ?? task.status ?? AppLocalization.unknown
+            )
+            return
+        }
         guard canSelectedNodeClaimBounty(task) != false else {
             bountyTaskErrorMessage = selectedBountyEligibilityLine
             return
@@ -2295,6 +2467,10 @@ final class ConsoleStore: ObservableObject {
             followBountyTask(task)
             await refreshClaimedBountyTasks()
         } catch {
+            if Self.isTaskNotOpenError(error) {
+                locallyClosedBountyTaskIDs.insert(task.id)
+                selectedBountyTaskID = preferredBountySelectionID(preservingCurrent: false, excluding: task.id)
+            }
             bountyTaskErrorMessage = Self.bountyClaimFailureMessage(error)
         }
     }
@@ -2323,7 +2499,7 @@ final class ConsoleStore: ObservableObject {
         guard let task else { return false }
         return activeBountyClaimTaskID == nil
             && bountyTaskPrerequisiteBlocker == nil
-            && (task.claimableTaskID != nil || task.bountyID?.nonEmpty != nil)
+            && bountyTaskCanAttemptClaim(task)
             && canSelectedNodeClaimBounty(task) != false
     }
 
@@ -2402,7 +2578,16 @@ final class ConsoleStore: ObservableObject {
             updatedAt: now,
             publishedAssetID: claimed?.mySubmissionAssetID,
             submissionID: claimed?.mySubmissionID,
-            submissionStatus: claimed?.mySubmissionStatus
+            submissionStatus: claimed?.mySubmissionStatus,
+            patchCourierRequestID: bountyAnswerDraft.patchCourierRequestID,
+            patchCourierTaskID: bountyAnswerDraft.patchCourierTaskID,
+            patchCourierStatus: bountyAnswerDraft.patchCourierStatus,
+            patchCourierThreadToken: bountyAnswerDraft.patchCourierThreadToken,
+            patchCourierSentAt: bountyAnswerDraft.patchCourierSentAt,
+            patchCourierReceivedAt: bountyAnswerDraft.patchCourierReceivedAt,
+            patchCourierMessageID: bountyAnswerDraft.patchCourierMessageID,
+            patchCourierConfidence: bountyAnswerDraft.patchCourierConfidence,
+            patchCourierRiskFlags: bountyAnswerDraft.patchCourierRiskFlags
         )
         persistSelectedBountyAnswerDraft()
         bountyAnswerDraftMessage = AppLocalization.string(
@@ -2473,6 +2658,150 @@ final class ConsoleStore: ObservableObject {
             "bounties.patch_courier.message.execute_copied",
             fallback: "Patch Courier execute email copied."
         )
+    }
+
+    func sendSelectedBountyToPatchCourierBackend() async {
+        guard isSendingPatchCourierBackendTask == false else { return }
+        guard let task = selectedBountyTask else { return }
+        guard selectedBountyTaskIsClaimed else {
+            patchCourierBackendErrorMessage = AppLocalization.string(
+                "bounties.patch_courier.backend.error.claim_first",
+                fallback: "Claim this bounty before sending it to the Patch Courier backend."
+            )
+            return
+        }
+        guard let account = ConsoleAppSettings.patchCourierBackendAccount,
+              let relayEmail = ConsoleAppSettings.patchCourierRelayEmail.nonEmpty else {
+            patchCourierBackendErrorMessage = AppLocalization.string(
+                "bounties.patch_courier.backend.error.not_configured",
+                fallback: "Complete Patch Courier backend mail settings first."
+            )
+            return
+        }
+        guard let password = patchCourierBackendPassword()?.nonEmpty else {
+            patchCourierBackendErrorMessage = AppLocalization.string(
+                "bounties.patch_courier.backend.error.no_password",
+                fallback: "Save the backend mailbox app password in Settings first."
+            )
+            return
+        }
+
+        isSendingPatchCourierBackendTask = true
+        patchCourierBackendMessage = nil
+        patchCourierBackendErrorMessage = nil
+        defer { isSendingPatchCourierBackendTask = false }
+
+        do {
+            let taskID = selectedBountyPatchCourierTaskID(for: task)
+            let requestID = selectedBountyPatchCourierRequestID(for: task)
+            let message = PatchCourierOutboundMailMessage(
+                to: [relayEmail],
+                subject: selectedBountyPatchCourierExecuteEmailSubject,
+                plainBody: selectedBountyPatchCourierExecuteEmailBody,
+                htmlBody: nil,
+                inReplyTo: nil,
+                references: []
+            )
+            let result = try await Task.detached {
+                try self.patchCourierMailTransportClient.sendMessage(account: account, password: password, message: message)
+            }.value
+
+            bountyAnswerDraft.patchCourierRequestID = requestID
+            bountyAnswerDraft.patchCourierTaskID = taskID
+            bountyAnswerDraft.patchCourierStatus = "sent"
+            bountyAnswerDraft.patchCourierSentAt = Date()
+            bountyAnswerDraft.patchCourierMessageID = result.messageID
+            persistSelectedBountyAnswerDraft()
+            startPatchCourierBackendPollingIfNeeded()
+            patchCourierBackendMessage = AppLocalization.string(
+                "bounties.patch_courier.backend.message.sent",
+                fallback: "Task sent silently to Patch Courier. The app will check replies automatically."
+            )
+        } catch {
+            patchCourierBackendErrorMessage = error.localizedDescription
+        }
+    }
+
+    func checkSelectedBountyPatchCourierBackendInbox() async {
+        await refreshPatchCourierBackendInbox(selectedOnly: true)
+    }
+
+    func startPatchCourierBackendPollingIfNeeded() {
+        guard ConsoleAppSettings.patchCourierBackendEnabled else {
+            isPatchCourierBackendPolling = false
+            patchCourierBackendPollTask?.cancel()
+            patchCourierBackendPollTask = nil
+            return
+        }
+        guard patchCourierBackendPollTask == nil else {
+            isPatchCourierBackendPolling = true
+            return
+        }
+
+        isPatchCourierBackendPolling = true
+        patchCourierBackendPollTask = Task { [weak self] in
+            while Task.isCancelled == false {
+                await self?.refreshPatchCourierBackendInbox(selectedOnly: false, isAutomatic: true)
+                let interval = UInt64(max(30, ConsoleAppSettings.patchCourierBackendPollIntervalSeconds))
+                try? await Task.sleep(nanoseconds: interval * 1_000_000_000)
+            }
+            await MainActor.run {
+                self?.isPatchCourierBackendPolling = false
+            }
+        }
+    }
+
+    func stopPatchCourierBackendPolling() {
+        patchCourierBackendPollTask?.cancel()
+        patchCourierBackendPollTask = nil
+        isPatchCourierBackendPolling = false
+    }
+
+    private func refreshPatchCourierBackendInbox(selectedOnly: Bool, isAutomatic: Bool = false) async {
+        guard isCheckingPatchCourierBackendInbox == false else { return }
+        guard ConsoleAppSettings.patchCourierBackendEnabled || isAutomatic == false else { return }
+        guard let account = ConsoleAppSettings.patchCourierBackendAccount else {
+            if isAutomatic == false {
+                patchCourierBackendErrorMessage = AppLocalization.string(
+                    "bounties.patch_courier.backend.error.not_configured",
+                    fallback: "Complete Patch Courier backend mail settings first."
+                )
+            }
+            return
+        }
+        guard let password = patchCourierBackendPassword()?.nonEmpty else {
+            if isAutomatic == false {
+                patchCourierBackendErrorMessage = AppLocalization.string(
+                    "bounties.patch_courier.backend.error.no_password",
+                    fallback: "Save the backend mailbox app password in Settings first."
+                )
+            }
+            return
+        }
+
+        isCheckingPatchCourierBackendInbox = true
+        if isAutomatic == false {
+            patchCourierBackendMessage = nil
+            patchCourierBackendErrorMessage = nil
+        }
+        defer { isCheckingPatchCourierBackendInbox = false }
+
+        do {
+            let history = try await Task.detached {
+                try self.patchCourierMailTransportClient.fetchRecentHistory(account: account, password: password, limit: 100)
+            }.value
+            let parsedResults = history.messages.compactMap(PatchCourierExecutionResult.parse(from:))
+            let updatedCount = applyPatchCourierExecutionResults(parsedResults, selectedOnly: selectedOnly)
+            if isAutomatic == false {
+                patchCourierBackendMessage = updatedCount > 0
+                    ? AppLocalization.string("bounties.patch_courier.backend.message.updated", fallback: "Updated %d Patch Courier result(s).", updatedCount)
+                    : AppLocalization.string("bounties.patch_courier.backend.message.no_result", fallback: "No matching Patch Courier result found yet.")
+            }
+        } catch {
+            if isAutomatic == false {
+                patchCourierBackendErrorMessage = error.localizedDescription
+            }
+        }
     }
 
     func submitSelectedBountyAnswer() async {
@@ -2568,6 +2897,122 @@ final class ConsoleStore: ObservableObject {
             ?? task.id
     }
 
+    private func selectedBountyPatchCourierRequestID(for task: EvoMapBountyTask) -> String {
+        "evomap:\(selectedBountyPatchCourierTaskID(for: task))"
+    }
+
+    private func patchCourierBackendPassword() -> String? {
+        guard let sender = ConsoleAppSettings.patchCourierBackendSenderEmail.nonEmpty else {
+            return nil
+        }
+        return try? patchCourierMailPasswordStore.loadPassword(account: sender)
+    }
+
+    private func applyPatchCourierExecutionResults(_ results: [PatchCourierExecutionResult], selectedOnly: Bool) -> Int {
+        guard results.isEmpty == false else { return 0 }
+        var drafts = Self.loadBountyAnswerDrafts()
+        let targetKeys: Set<String>
+        if selectedOnly, let task = selectedBountyTask {
+            targetKeys = [bountyDraftKey(for: task)]
+        } else {
+            targetKeys = Set(drafts.keys)
+        }
+
+        var updatedCount = 0
+        for key in targetKeys {
+            guard var draft = drafts[key] else { continue }
+            let candidates = results
+                .filter { patchCourierResult($0, matches: draft) }
+                .sorted { lhs, rhs in
+                    if lhs.isUsableFinalAnswer != rhs.isUsableFinalAnswer {
+                        return lhs.isUsableFinalAnswer
+                    }
+                    return lhs.receivedAt > rhs.receivedAt
+                }
+            guard let result = candidates.first else { continue }
+            if draft.patchCourierMessageID == result.messageID {
+                let incomingAnswer = result.finalAnswerMarkdown?.nonEmpty
+                guard incomingAnswer != nil && incomingAnswer != draft.answerText else { continue }
+            }
+
+            draft.patchCourierRequestID = result.requestID ?? draft.patchCourierRequestID
+            draft.patchCourierTaskID = result.taskID ?? draft.patchCourierTaskID
+            draft.patchCourierStatus = result.status ?? (result.isUsableFinalAnswer ? "done" : "received")
+            draft.patchCourierThreadToken = result.threadToken ?? draft.patchCourierThreadToken
+            draft.patchCourierReceivedAt = result.receivedAt
+            draft.patchCourierMessageID = result.messageID
+            draft.patchCourierConfidence = result.confidence ?? draft.patchCourierConfidence
+            draft.patchCourierRiskFlags = result.riskFlags ?? draft.patchCourierRiskFlags
+
+            if let finalAnswer = result.finalAnswerMarkdown?.nonEmpty {
+                draft.answerText = finalAnswer
+                draft.verificationNotes = patchCourierVerificationNotes(existing: draft.verificationNotes, result: result)
+            }
+            draft.updatedAt = Date()
+            drafts[key] = draft
+            updatedCount += 1
+
+            if bountyAnswerDraft.taskKey == key {
+                bountyAnswerDraft = draft
+            }
+        }
+
+        if updatedCount > 0 {
+            Self.saveBountyAnswerDrafts(drafts)
+        }
+        return updatedCount
+    }
+
+    private func patchCourierResult(_ result: PatchCourierExecutionResult, matches draft: BountyAnswerDraft) -> Bool {
+        let resultIDs = [result.requestID, result.taskID]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+        let draftIDs = [
+            draft.patchCourierRequestID,
+            draft.patchCourierTaskID,
+            draft.taskID,
+            draft.bountyID,
+            draft.questionID,
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        .filter { !$0.isEmpty }
+
+        guard resultIDs.isEmpty == false, draftIDs.isEmpty == false else {
+            return false
+        }
+        let expandedResultIDs = Set(resultIDs.flatMap(Self.expandedPatchCourierIdentifierCandidates(_:)))
+        let expandedDraftIDs = Set(draftIDs.flatMap(Self.expandedPatchCourierIdentifierCandidates(_:)))
+        return expandedResultIDs.isDisjoint(with: expandedDraftIDs) == false
+    }
+
+    private static func expandedPatchCourierIdentifierCandidates(_ rawValue: String) -> [String] {
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard value.isEmpty == false else { return [] }
+        if value.hasPrefix("evomap:") {
+            let stripped = String(value.dropFirst("evomap:".count))
+            return [value, stripped].filter { $0.isEmpty == false }
+        }
+        return [value, "evomap:\(value)"]
+    }
+
+    private func patchCourierVerificationNotes(existing: String, result: PatchCourierExecutionResult) -> String {
+        var lines = existing
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("Patch Courier:") }
+        lines.append(
+            [
+                "Patch Courier: \(result.status ?? "received")",
+                result.confidence.map { "confidence \($0)" },
+                result.riskFlags.map { "risk \($0)" },
+                result.threadToken.map { "thread \($0)" },
+            ]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+        )
+        return lines.joined(separator: "\n")
+    }
+
     private func selectedBountyPatchCourierPayload(
         task: EvoMapBountyTask,
         claimed: EvoMapClaimedBountyTask?,
@@ -2621,8 +3066,39 @@ final class ConsoleStore: ObservableObject {
             )
             return
         }
-        NSWorkspace.shared.open(url)
-        bountyExecutionMessage = successMessage
+        guard let mailAppURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.mail") else {
+            copyToPasteboard(patchCourierEmailEnvelope(to: relayEmail, subject: subject, body: body))
+            bountyExecutionMessage = AppLocalization.string(
+                "bounties.patch_courier.error.no_mail_app",
+                fallback: "Could not find Apple Mail. The email was copied instead; paste it into your mail client."
+            )
+            return
+        }
+
+        NSWorkspace.shared.open([url], withApplicationAt: mailAppURL, configuration: NSWorkspace.OpenConfiguration()) { [weak self] _, error in
+            Task { @MainActor in
+                guard let self else { return }
+                if let error {
+                    self.copyToPasteboard(self.patchCourierEmailEnvelope(to: relayEmail, subject: subject, body: body))
+                    self.bountyExecutionMessage = AppLocalization.string(
+                        "bounties.patch_courier.error.mail_app_failed",
+                        fallback: "Could not open Apple Mail (%@). The email was copied instead.",
+                        error.localizedDescription
+                    )
+                    return
+                }
+                self.bountyExecutionMessage = successMessage
+            }
+        }
+    }
+
+    private func patchCourierEmailEnvelope(to relayEmail: String, subject: String, body: String) -> String {
+        """
+        To: \(relayEmail)
+        Subject: \(subject)
+
+        \(body)
+        """
     }
 
     private func claimedBountyTask(for task: EvoMapBountyTask) -> EvoMapClaimedBountyTask? {
@@ -2672,7 +3148,16 @@ final class ConsoleStore: ObservableObject {
             updatedAt: Date(),
             publishedAssetID: claimed?.mySubmissionAssetID,
             submissionID: claimed?.mySubmissionID,
-            submissionStatus: claimed?.mySubmissionStatus
+            submissionStatus: claimed?.mySubmissionStatus,
+            patchCourierRequestID: nil,
+            patchCourierTaskID: nil,
+            patchCourierStatus: nil,
+            patchCourierThreadToken: nil,
+            patchCourierSentAt: nil,
+            patchCourierReceivedAt: nil,
+            patchCourierMessageID: nil,
+            patchCourierConfidence: nil,
+            patchCourierRiskFlags: nil
         )
     }
 
@@ -5620,6 +6105,12 @@ final class ConsoleStore: ObservableObject {
     private static func bountyClaimFailureMessage(_ error: Error) -> String {
         if case EvoMapClientError.httpStatus(let status, let message) = error {
             let normalized = message.lowercased()
+            if status == 409 && normalized.contains("task_not_open") {
+                return AppLocalization.string(
+                    "credits.bounty.error.task_not_open",
+                    fallback: "HTTP 409: This bounty is not open for claiming now. The public board can show matched/pending/stale bounties, but /a2a/task/claim only accepts open task IDs. Refresh bounties or choose another Open task."
+                )
+            }
             if status == 403 && normalized.contains("insufficient_reputation") {
                 return AppLocalization.string(
                     "credits.bounty.error.insufficient_reputation",
@@ -5628,6 +6119,14 @@ final class ConsoleStore: ObservableObject {
             }
         }
         return error.localizedDescription
+    }
+
+    private static func isTaskNotOpenError(_ error: Error) -> Bool {
+        if case EvoMapClientError.httpStatus(let status, let message) = error {
+            return status == 409 && message.lowercased().contains("task_not_open")
+        }
+        let normalized = error.localizedDescription.lowercased()
+        return normalized.contains("409") && normalized.contains("task_not_open")
     }
 
     private static func isRateLimitError(_ error: Error) -> Bool {

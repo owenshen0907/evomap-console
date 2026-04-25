@@ -9,6 +9,15 @@ enum ConsoleAppSettings {
     static let showRawPayloadsKey = "settings.showRawPayloads"
     static let patchCourierRelayEmailKey = "settings.patchCourierRelayEmail"
     static let patchCourierProjectSlugKey = "settings.patchCourierProjectSlug"
+    static let patchCourierBackendEnabledKey = "settings.patchCourierBackendEnabled"
+    static let patchCourierBackendSenderEmailKey = "settings.patchCourierBackendSenderEmail"
+    static let patchCourierBackendIMAPHostKey = "settings.patchCourierBackendIMAPHost"
+    static let patchCourierBackendIMAPPortKey = "settings.patchCourierBackendIMAPPort"
+    static let patchCourierBackendIMAPSecurityKey = "settings.patchCourierBackendIMAPSecurity"
+    static let patchCourierBackendSMTPHostKey = "settings.patchCourierBackendSMTPHost"
+    static let patchCourierBackendSMTPPortKey = "settings.patchCourierBackendSMTPPort"
+    static let patchCourierBackendSMTPSecurityKey = "settings.patchCourierBackendSMTPSecurity"
+    static let patchCourierBackendPollIntervalSecondsKey = "settings.patchCourierBackendPollIntervalSeconds"
 
     private static let kgAPIKeyStore: KnowledgeGraphAPIKeyStoring = KeychainKnowledgeGraphAPIKeyStore()
 
@@ -39,6 +48,87 @@ enum ConsoleAppSettings {
 
     static var patchCourierProjectSlug: String {
         normalizedString(for: patchCourierProjectSlugKey) ?? "evomap-tasks"
+    }
+
+    static var patchCourierBackendEnabled: Bool {
+        UserDefaults.standard.bool(forKey: patchCourierBackendEnabledKey)
+    }
+
+    static var patchCourierBackendSenderEmail: String {
+        normalizedString(for: patchCourierBackendSenderEmailKey) ?? ""
+    }
+
+    static var patchCourierBackendIMAPHost: String {
+        normalizedString(for: patchCourierBackendIMAPHostKey) ?? ""
+    }
+
+    static var patchCourierBackendIMAPPort: Int {
+        let value = UserDefaults.standard.integer(forKey: patchCourierBackendIMAPPortKey)
+        return value > 0 ? value : 993
+    }
+
+    static var patchCourierBackendIMAPSecurity: PatchCourierMailSecurity {
+        let rawValue = UserDefaults.standard.string(forKey: patchCourierBackendIMAPSecurityKey) ?? PatchCourierMailSecurity.sslTLS.rawValue
+        return PatchCourierMailSecurity(rawValue: rawValue) ?? .sslTLS
+    }
+
+    static var patchCourierBackendSMTPHost: String {
+        normalizedString(for: patchCourierBackendSMTPHostKey) ?? ""
+    }
+
+    static var patchCourierBackendSMTPPort: Int {
+        let value = UserDefaults.standard.integer(forKey: patchCourierBackendSMTPPortKey)
+        return value > 0 ? value : 465
+    }
+
+    static var patchCourierBackendSMTPSecurity: PatchCourierMailSecurity {
+        let rawValue = UserDefaults.standard.string(forKey: patchCourierBackendSMTPSecurityKey) ?? PatchCourierMailSecurity.sslTLS.rawValue
+        return PatchCourierMailSecurity(rawValue: rawValue) ?? .sslTLS
+    }
+
+    static var patchCourierBackendPollIntervalSeconds: Int {
+        let value = UserDefaults.standard.integer(forKey: patchCourierBackendPollIntervalSecondsKey)
+        return max(30, value > 0 ? value : 60)
+    }
+
+    static var patchCourierMailTransportScriptURL: URL {
+        applicationSupportDirectory
+            .appendingPathComponent("runtime-tools", isDirectory: true)
+            .appendingPathComponent("patch_courier_mail_transport.py")
+    }
+
+    static var applicationSupportDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("EvomapConsole", isDirectory: true)
+    }
+
+    static var patchCourierBackendAccount: PatchCourierMailAccount? {
+        guard let senderEmail = patchCourierBackendSenderEmail.nonEmpty,
+              let imapHost = patchCourierBackendIMAPHost.nonEmpty,
+              let smtpHost = patchCourierBackendSMTPHost.nonEmpty else {
+            return nil
+        }
+        let now = Date()
+        return PatchCourierMailAccount(
+            id: senderEmail.lowercased(),
+            label: "EvomapConsole",
+            emailAddress: senderEmail,
+            role: "operator",
+            workspaceRoot: NSHomeDirectory(),
+            imap: PatchCourierMailEndpoint(
+                host: imapHost,
+                port: patchCourierBackendIMAPPort,
+                security: patchCourierBackendIMAPSecurity
+            ),
+            smtp: PatchCourierMailEndpoint(
+                host: smtpHost,
+                port: patchCourierBackendSMTPPort,
+                security: patchCourierBackendSMTPSecurity
+            ),
+            pollingIntervalSeconds: patchCourierBackendPollIntervalSeconds,
+            createdAt: now,
+            updatedAt: now
+        )
     }
 
     static var appLanguage: ConsoleLanguage {

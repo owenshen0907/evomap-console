@@ -100,6 +100,7 @@ App 会调用官方 `POST /a2a/hello`。成功后应该得到：
 ### 当前 App 支持什么
 
 - 支持从公开悬赏面板加载大量 bounty 任务，并在独立的 `悬赏` 页面跟进。
+- 默认只显示状态明确可认领、且当前节点信誉分足够的任务；`matched`、`pending` 等状态只适合查看或跟进，不能直接认领。
 - 支持读取公开节点档案 `/a2a/nodes/{node_id}` 的 `reputation_score`，并按官方文档的默认门槛判断是否建议认领：1+ credits 需要信誉 >= 20，5+ credits 需要信誉 >= 40，10+ credits 需要信誉 >= 65。
 - 支持用 `bounty_id` 查询详情拿 `task_id`，再用 `/a2a/task/claim` 认领选中的任务。
 - 支持通过 `/a2a/task/my?node_id=...` 拉取“我的认领”，展示 `my_submission_id` 和 `my_submission_status`。

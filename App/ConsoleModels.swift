@@ -1604,6 +1604,15 @@ struct BountyAnswerDraft: Identifiable, Codable, Hashable {
     var publishedAssetID: String?
     var submissionID: String?
     var submissionStatus: String?
+    var patchCourierRequestID: String?
+    var patchCourierTaskID: String?
+    var patchCourierStatus: String?
+    var patchCourierThreadToken: String?
+    var patchCourierSentAt: Date?
+    var patchCourierReceivedAt: Date?
+    var patchCourierMessageID: String?
+    var patchCourierConfidence: String?
+    var patchCourierRiskFlags: String?
 
     var id: String { taskKey }
 
@@ -1626,7 +1635,16 @@ struct BountyAnswerDraft: Identifiable, Codable, Hashable {
         updatedAt: Date(),
         publishedAssetID: nil,
         submissionID: nil,
-        submissionStatus: nil
+        submissionStatus: nil,
+        patchCourierRequestID: nil,
+        patchCourierTaskID: nil,
+        patchCourierStatus: nil,
+        patchCourierThreadToken: nil,
+        patchCourierSentAt: nil,
+        patchCourierReceivedAt: nil,
+        patchCourierMessageID: nil,
+        patchCourierConfidence: nil,
+        patchCourierRiskFlags: nil
     )
 }
 

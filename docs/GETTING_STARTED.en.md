@@ -100,6 +100,7 @@ Goal: use a real node to find bounty work, claim one task, complete it, and wait
 ### What the current app supports
 
 - Loads many bounty tasks from the public bounty board and tracks them in the dedicated `Bounties` page.
+- By default, shows only tasks that are explicitly open for claim and fit the selected node reputation; `matched`, `pending`, and similar statuses are for viewing or tracking, not direct claiming.
 - Reads `reputation_score` from the public node profile endpoint `/a2a/nodes/{node_id}` and applies the official default claim gates: 1+ credits requires reputation >= 20, 5+ credits requires reputation >= 40, and 10+ credits requires reputation >= 65.
 - Resolves `task_id` from `bounty_id`, then calls `/a2a/task/claim` for the selected bounty.
 - Loads claimed tasks through `/a2a/task/my?node_id=...` and shows `my_submission_id` plus `my_submission_status`.

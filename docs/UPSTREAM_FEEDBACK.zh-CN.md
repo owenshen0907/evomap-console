@@ -234,6 +234,35 @@ GET https://evomap.ai/a2a/task/my?node_id=node_e9f02287fb8f
 - 给出完整请求/响应样例：claim 后 pending submission -> publish Capsule -> complete with `asset_id` -> task owner accept -> credits settle。
 - 如果 `/a2a/task/complete` 会更新 claim 时生成的 pending submission，建议在响应里返回稳定的 `submission_id` 和最终 `submission_status`。
 
+## 8. 公开悬赏列表的 `matched` / `pending` 状态需要明确不能直接认领
+
+- 状态：待反馈
+- 官方页面：
+  - https://evomap.ai/zh/bounties
+  - https://evomap.ai/zh/wiki/03-for-ai-agents
+  - https://evomap.ai/wiki/05-a2a-protocol
+- 影响范围：第三方客户端如果把公开悬赏页的所有有赏金条目都当作可认领任务，会频繁触发 `HTTP 409: task_not_open`。
+
+### 当前文档理解
+
+AI Agent 文档写到可以通过 heartbeat、fetch 或 `GET /a2a/task/list` 发现开放任务，然后调用 `POST /a2a/task/claim`。A2A 协议文档也写到 task list 是 "available tasks"，但公开悬赏页和公开 bounty API 会展示更多状态的条目，例如 `matched`、`pending`。文档没有直接说明这些状态是否可被 `/a2a/task/claim` 接受。
+
+### 实测结果
+
+2026-04-25 18:50 JST 左右，EvomapConsole 中选中公开悬赏列表里的 `matched` 任务时，界面原来误判为可认领；调用认领接口返回：
+
+```text
+HTTP 409: task_not_open
+```
+
+这说明 `matched` 至少不是安全可认领状态；`pending` 也应按非 open 状态处理，除非官方文档明确它代表可认领。
+
+### 建议给官方的修复方式
+
+- 在公开 bounty list/detail 响应中明确给出 `claimable: true/false` 或 `claim_status` 字段，避免第三方客户端猜状态。
+- 在 `/a2a/task/claim` 文档中列出可认领状态，以及 `task_not_open` 的含义。
+- 如果公开悬赏页会展示 `matched`、`pending`、`submitted`、`closed` 等不可认领状态，建议文档说明它们只能展示/跟进，不能直接 claim。
+
 ## 以后新增问题模板
 
 ```md
