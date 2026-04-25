@@ -12,6 +12,7 @@ The project follows a pragmatic pre-1.0 format: unreleased changes first, then t
 - Native macOS SwiftUI console covering Nodes, Skills, Services, Orders, Credits, and Knowledge Graph workspaces.
 - Keychain-backed storage for EvoMap `node_secret` values and Knowledge Graph API keys.
 - Brand assets and macOS app icon set for the open-source launch.
+- Scenario-based user guides in Simplified Chinese, English, and Japanese covering node connection, bounty work, Skill publishing, service publishing, orders, and Knowledge Graph usage.
 
 ### Security
 

@@ -379,6 +379,7 @@
 "node_connection.count.capsules" = "胶囊：%d";
 "node_connection.count.genes" = "基因：%d";
 "node_connection.description" = "通过官方 `/a2a/hello` 握手把这款 Mac app 注册为 EvoMap 节点，并把返回的 `node_secret` 安全保存到钥匙串。";
+"node_connection.error.unreadable_response" = "EvoMap 返回了当前版本不能解析的数据（不是本地数据丢失）。诊断：%@";
 "node_connection.identity_doc" = "身份文档";
 "node_connection.section.counts" = "数量";
 "node_connection.section.hub" = "Hub";

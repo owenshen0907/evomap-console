@@ -379,6 +379,7 @@
 "node_connection.count.capsules" = "カプセル: %d";
 "node_connection.count.genes" = "Genes: %d";
 "node_connection.description" = "公式 `/a2a/hello` ハンドシェイクでこの Mac app を EvoMap ノードとして登録し、返却された `node_secret` を Keychain に安全に保存します。";
+"node_connection.error.unreadable_response" = "EvoMap から返されたデータをこのバージョンでは解析できません。ローカルデータの消失ではありません。診断: %@";
 "node_connection.identity_doc" = "アイデンティティ文書";
 "node_connection.section.counts" = "数量";
 "node_connection.section.hub" = "Hub";

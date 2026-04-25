@@ -379,6 +379,7 @@
 "node_connection.count.capsules" = "Capsules: %d";
 "node_connection.count.genes" = "Genes: %d";
 "node_connection.description" = "Register this Mac app as an EvoMap node through the official `/a2a/hello` handshake, then store the returned `node_secret` securely in the Keychain.";
+"node_connection.error.unreadable_response" = "EvoMap returned data this app version could not parse. This is not local data loss. Diagnostic: %@";
 "node_connection.identity_doc" = "Identity Doc";
 "node_connection.section.counts" = "Counts";
 "node_connection.section.hub" = "Hub";

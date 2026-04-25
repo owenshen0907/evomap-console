@@ -595,6 +595,139 @@ struct EvoMapHelloResponse: Decodable {
         case heartbeatIntervalMS = "heartbeat_interval_ms"
         case heartbeatEndpoint = "heartbeat_endpoint"
     }
+
+    init(from decoder: Decoder) throws {
+        let root = try JSONValue(from: decoder)
+        let payload = Self.responsePayload(from: root)
+        let preferred = payload == root ? [payload] : [payload, root]
+
+        status = Self.string(keys: ["status", "state"], preferred: preferred) ?? "acknowledged"
+        guard let nodeID = Self.string(
+            keys: ["your_node_id", "yourNodeID", "node_id", "nodeID", "sender_id", "senderID", "id"],
+            preferred: [payload]
+        ) else {
+            let shape = Self.responseShapeDescription(root)
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "EvoMap hello response is missing your_node_id. \(shape)"
+                )
+            )
+        }
+
+        yourNodeID = nodeID
+        hubNodeID = Self.string(keys: ["hub_node_id", "hubNodeID"], preferred: preferred)
+        nodeSecret = Self.string(keys: ["node_secret", "nodeSecret"], preferred: preferred)
+        nodeSecretStatus = Self.string(keys: ["node_secret_status", "nodeSecretStatus"], preferred: preferred)
+        claimCode = Self.string(keys: ["claim_code", "claimCode"], preferred: preferred)
+        claimURL = Self.string(keys: ["claim_url", "claimURL"], preferred: preferred)
+        creditBalance = Self.int(keys: ["credit_balance", "creditBalance", "balance", "credits"], preferred: preferred)
+        survivalStatus = Self.string(keys: ["survival_status", "survivalStatus"], preferred: preferred)
+        referralCode = Self.string(keys: ["referral_code", "referralCode"], preferred: preferred)
+        recommendedTasks = Self.taskSummaries(from: Self.array(
+            keys: ["recommended_tasks", "recommendedTasks", "available_tasks", "available_work", "tasks"],
+            preferred: preferred
+        ))
+        networkManifest = Self.networkManifest(from: Self.value(
+            keys: ["network_manifest", "networkManifest"],
+            preferred: preferred
+        ))
+        migratedFrom = Self.string(keys: ["migrated_from", "migratedFrom"], preferred: preferred)
+        mergeHint = Self.string(keys: ["merge_hint", "mergeHint"], preferred: preferred)
+        heartbeatIntervalMS = Self.int(keys: ["heartbeat_interval_ms", "heartbeatIntervalMS"], preferred: preferred)
+        heartbeatEndpoint = Self.string(keys: ["heartbeat_endpoint", "heartbeatEndpoint"], preferred: preferred)
+    }
+
+    private static func responsePayload(from root: JSONValue) -> JSONValue {
+        for path in [
+            ["payload"],
+            ["data", "payload"],
+            ["result", "payload"],
+            ["data"],
+            ["result"],
+        ] {
+            if let value = root.value(at: path) {
+                return value
+            }
+        }
+        return root
+    }
+
+    private static func string(keys: [String], preferred containers: [JSONValue]) -> String? {
+        for container in containers {
+            if let value = container.directString(forKeys: keys)?.nonEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func int(keys: [String], preferred containers: [JSONValue]) -> Int? {
+        for container in containers {
+            if let value = container.directInt(forKeys: keys) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func array(keys: [String], preferred containers: [JSONValue]) -> [JSONValue]? {
+        for container in containers {
+            if let value = container.directArray(forKeys: keys) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func value(keys: [String], preferred containers: [JSONValue]) -> JSONValue? {
+        for container in containers {
+            for key in keys {
+                if let value = container.value(at: [key]) {
+                    return value
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func taskSummaries(from values: [JSONValue]?) -> [EvoMapTaskSummary]? {
+        let summaries = values?.compactMap { value -> EvoMapTaskSummary? in
+            guard value.objectValue != nil else { return nil }
+            return EvoMapTaskSummary(
+                taskID: value.recursiveString(forKeys: ["task_id", "taskID", "id"]),
+                title: value.recursiveString(forKeys: ["title", "name", "question"]),
+                summary: value.recursiveString(forKeys: ["summary", "description", "body", "prompt"]),
+                bountyCredits: value.recursiveInt(forKeys: ["bounty_credits", "bountyCredits", "bounty"]),
+                rewardCredits: value.recursiveInt(forKeys: ["reward_credits", "rewardCredits", "reward"]),
+                domain: value.recursiveString(forKeys: ["domain", "category", "topic"]),
+                kind: value.recursiveString(forKeys: ["kind", "type"])
+            )
+        } ?? []
+        return summaries.isEmpty ? nil : summaries
+    }
+
+    private static func networkManifest(from value: JSONValue?) -> EvoMapNetworkManifest? {
+        guard let value else { return nil }
+        if value.objectValue != nil {
+            return EvoMapNetworkManifest(
+                name: value.recursiveString(forKeys: ["name", "title"]),
+                connect: value.recursiveString(forKeys: ["connect", "url", "endpoint"])
+            )
+        }
+        return value.lossyString.map { EvoMapNetworkManifest(name: $0, connect: nil) }
+    }
+
+    private static func responseShapeDescription(_ root: JSONValue) -> String {
+        var parts: [String] = []
+        if let object = root.objectValue {
+            parts.append("top-level keys: \(object.keys.sorted().joined(separator: ", "))")
+        }
+        if let payload = root.value(at: ["payload"])?.objectValue {
+            parts.append("payload keys: \(payload.keys.sorted().joined(separator: ", "))")
+        }
+        return parts.isEmpty ? "response: \(root.compactDescription)" : parts.joined(separator: "; ")
+    }
 }
 
 struct EvoMapTaskSummary: Decodable, Hashable {
@@ -1562,6 +1695,7 @@ enum EvoMapClientError: LocalizedError {
     case invalidBaseURL(String)
     case invalidResponse
     case httpStatus(Int, String)
+    case decodingFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -1571,6 +1705,8 @@ enum EvoMapClientError: LocalizedError {
             return "The EvoMap server returned an invalid response."
         case .httpStatus(let status, let message):
             return message.isEmpty ? "The EvoMap server returned HTTP \(status)." : "HTTP \(status): \(message)"
+        case .decodingFailed(let message):
+            return "The EvoMap server returned JSON that this app could not decode. \(message)"
         }
     }
 }
@@ -1830,7 +1966,7 @@ struct EvoMapClient: EvoMapClientProtocol {
             throw EvoMapClientError.httpStatus(httpResponse.statusCode, parseErrorMessage(from: data))
         }
 
-        return try decoder.decode(Response.self, from: data)
+        return try decodeResponse(Response.self, from: data)
     }
 
     private func performGetRequest<Response: Decodable>(
@@ -1854,7 +1990,15 @@ struct EvoMapClient: EvoMapClientProtocol {
             throw EvoMapClientError.httpStatus(httpResponse.statusCode, parseErrorMessage(from: data))
         }
 
-        return try decoder.decode(Response.self, from: data)
+        return try decodeResponse(Response.self, from: data)
+    }
+
+    private func decodeResponse<Response: Decodable>(_ type: Response.Type, from data: Data) throws -> Response {
+        do {
+            return try decoder.decode(Response.self, from: data)
+        } catch {
+            throw EvoMapClientError.decodingFailed(Self.decodingDiagnostic(for: error, data: data))
+        }
     }
 
     private func makeEndpoint(baseURL: String, path: String) throws -> URL {
@@ -1906,6 +2050,21 @@ struct EvoMapClient: EvoMapClientProtocol {
 
         return String(data: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private static func decodingDiagnostic(for error: Error, data: Data) -> String {
+        var parts = [String(describing: error)]
+        if let root = try? JSONDecoder().decode(JSONValue.self, from: data) {
+            if let object = root.objectValue {
+                parts.append("top-level keys: \(object.keys.sorted().joined(separator: ", "))")
+            }
+            if let payload = root.value(at: ["payload"])?.objectValue {
+                parts.append("payload keys: \(payload.keys.sorted().joined(separator: ", "))")
+            }
+        } else {
+            parts.append("non-JSON response, \(data.count) bytes")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private static func makeMessageID() -> String {

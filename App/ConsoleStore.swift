@@ -1669,7 +1669,7 @@ final class ConsoleStore: ObservableObject {
     }
 
     func prepareNodeConnection() {
-        let selectedNode = selectedNode
+        let selectedNode = selectedNode?.isSampleData == true ? nil : selectedNode
         nodeConnectionDraft = NodeConnectionDraft(
             editingNodeID: selectedNode?.id,
             nodeName: selectedNode?.name ?? ConsoleAppSettings.defaultNodeName,
@@ -1724,7 +1724,7 @@ final class ConsoleStore: ObservableObject {
             applyHelloResponse(response, draft: draft)
             isPresentingNodeConnectionSheet = false
         } catch {
-            nodeConnectionErrorMessage = error.localizedDescription
+            nodeConnectionErrorMessage = Self.nodeConnectionFailureMessage(error)
         }
     }
 
@@ -4572,6 +4572,18 @@ final class ConsoleStore: ObservableObject {
 
     private func prependEvents(_ newEvents: [NodeEvent], to node: inout NodeRecord) {
         node.recentEvents = Array((newEvents + node.recentEvents).prefix(12))
+    }
+
+    private static func nodeConnectionFailureMessage(_ error: Error) -> String {
+        if let clientError = error as? EvoMapClientError,
+           case .decodingFailed(let diagnostic) = clientError {
+            return AppLocalization.string(
+                "node_connection.error.unreadable_response",
+                fallback: "EvoMap returned a response this app could not read. This is not local data loss. Diagnostic: %@",
+                diagnostic
+            )
+        }
+        return error.localizedDescription
     }
 
     private static func makeTaskPreview(from task: EvoMapTaskSummary) -> NodeTaskPreview {

@@ -34,7 +34,11 @@ For day-one use, treat EvoMap Console as a local management app:
 4. Keep Japanese vocabulary and grammar data local until it is cleaned, then import the final `SKILL.md` from `Skills`.
 5. Add a Knowledge Graph API key in `Settings` only after your account can access paid `/kg/*` APIs.
 
-Chinese quick-start: `docs/GETTING_STARTED.zh-CN.md`
+Scenario-based user guides:
+
+- 简体中文: `docs/GETTING_STARTED.zh-CN.md`
+- English: `docs/GETTING_STARTED.en.md`
+- 日本語: `docs/GETTING_STARTED.ja.md`
 
 The `Overview` screen now includes a module guide for the left sidebar so first-time users can see what `Nodes`, `Credits`, `Skills`, `Services`, `Orders`, `Graph`, and `Activity` are for before connecting real credentials.
 
@@ -82,11 +86,14 @@ Run the open-source readiness audit:
 - Product plan: `docs/PLAN.md`
 - Detailed design: `docs/DESIGN.md`
 - Brand assets: `docs/BRAND.md`
-- Chinese quick-start: `docs/GETTING_STARTED.zh-CN.md`
+- User guide (简体中文): `docs/GETTING_STARTED.zh-CN.md`
+- User guide (English): `docs/GETTING_STARTED.en.md`
+- User guide (日本語): `docs/GETTING_STARTED.ja.md`
 - Open-source checklist: `docs/OPEN_SOURCE.md`
 - Publishing guide: `docs/PUBLISHING.md`
 - Changelog: `CHANGELOG.md`
 - UI references: `docs/UI_REFERENCES.md`
+- Upstream docs feedback: `docs/UPSTREAM_FEEDBACK.zh-CN.md`
 
 ## Repository Structure
 
