@@ -4,6 +4,7 @@ enum ConsoleSection: String, CaseIterable, Identifiable {
     case overview
     case nodes
     case credits
+    case bounties
     case skills
     case services
     case orders
@@ -20,6 +21,8 @@ enum ConsoleSection: String, CaseIterable, Identifiable {
             return AppLocalization.string("section.nodes", fallback: "Nodes")
         case .credits:
             return AppLocalization.string("section.credits", fallback: "Credits")
+        case .bounties:
+            return AppLocalization.string("section.bounties", fallback: "Bounties")
         case .skills:
             return AppLocalization.string("section.skills", fallback: "Skills")
         case .services:
@@ -41,6 +44,8 @@ enum ConsoleSection: String, CaseIterable, Identifiable {
             return "server.rack"
         case .credits:
             return "creditcard.and.123"
+        case .bounties:
+            return "target"
         case .skills:
             return "sparkles.rectangle.stack"
         case .services:
@@ -56,7 +61,7 @@ enum ConsoleSection: String, CaseIterable, Identifiable {
 
     var isAvailableInV1: Bool {
         switch self {
-        case .overview, .nodes, .credits, .skills, .services, .orders, .graph:
+        case .overview, .nodes, .credits, .bounties, .skills, .services, .orders, .graph:
             return true
         case .activity:
             return false
@@ -75,6 +80,8 @@ enum ConsoleSection: String, CaseIterable, Identifiable {
             return AppLocalization.string("search.nodes", fallback: "Search nodes")
         case .credits:
             return AppLocalization.string("search.credits", fallback: "Search credit tasks")
+        case .bounties:
+            return AppLocalization.string("search.bounties", fallback: "Search bounty tasks")
         case .skills:
             return AppLocalization.string("search.skills", fallback: "Search skills")
         case .services:
@@ -624,7 +631,7 @@ struct KnowledgeGraphSnapshot: Decodable, Hashable {
     }
 }
 
-enum NodeClaimState: String, CaseIterable, Hashable {
+enum NodeClaimState: String, CaseIterable, Hashable, Codable {
     case claimed
     case pending
     case unclaimed
@@ -652,7 +659,7 @@ enum NodeClaimState: String, CaseIterable, Hashable {
     }
 }
 
-enum NodeHeartbeatState: String, CaseIterable, Hashable {
+enum NodeHeartbeatState: String, CaseIterable, Hashable, Codable {
     case healthy
     case warning
     case offline
@@ -680,7 +687,7 @@ enum NodeHeartbeatState: String, CaseIterable, Hashable {
     }
 }
 
-enum NodeEnvironment: String, CaseIterable, Hashable {
+enum NodeEnvironment: String, CaseIterable, Hashable, Codable {
     case production
     case staging
     case local
@@ -697,13 +704,29 @@ enum NodeEnvironment: String, CaseIterable, Hashable {
     }
 }
 
-struct NodeEvent: Identifiable, Hashable {
-    let id = UUID()
+struct NodeEvent: Identifiable, Hashable, Codable {
+    let id: UUID
     let timestamp: Date
     let title: String
     let detail: String
     var titleKey: String? = nil
     var detailKey: String? = nil
+
+    init(
+        id: UUID = UUID(),
+        timestamp: Date,
+        title: String,
+        detail: String,
+        titleKey: String? = nil,
+        detailKey: String? = nil
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.title = title
+        self.detail = detail
+        self.titleKey = titleKey
+        self.detailKey = detailKey
+    }
 
     var localizedTitle: String {
         guard let titleKey else { return AppLocalization.phrase(title) }
@@ -716,7 +739,7 @@ struct NodeEvent: Identifiable, Hashable {
     }
 }
 
-struct NodeTaskPreview: Identifiable, Hashable {
+struct NodeTaskPreview: Identifiable, Hashable, Codable {
     let id: String
     var title: String
     var summary: String?
@@ -725,14 +748,14 @@ struct NodeTaskPreview: Identifiable, Hashable {
     var kind: String?
 }
 
-struct NodeOverdueTask: Identifiable, Hashable {
+struct NodeOverdueTask: Identifiable, Hashable, Codable {
     let id: String
     var title: String
     var commitmentDeadline: Date?
     var overdueMinutes: Int?
 }
 
-struct NodePendingEventPreview: Identifiable, Hashable {
+struct NodePendingEventPreview: Identifiable, Hashable, Codable {
     let id: String
     var type: String
     var createdAt: Date?
@@ -740,7 +763,7 @@ struct NodePendingEventPreview: Identifiable, Hashable {
     var summary: String
 }
 
-struct NodePeerPreview: Identifiable, Hashable {
+struct NodePeerPreview: Identifiable, Hashable, Codable {
     let id: String
     var alias: String?
     var online: Bool
@@ -748,14 +771,14 @@ struct NodePeerPreview: Identifiable, Hashable {
     var workload: Int?
 }
 
-struct NodeErrorPatternPreview: Identifiable, Hashable {
+struct NodeErrorPatternPreview: Identifiable, Hashable, Codable {
     let id: String
     var count: Int
     var escalation: String?
     var reason: String?
 }
 
-struct NodeAccountabilitySnapshot: Hashable {
+struct NodeAccountabilitySnapshot: Hashable, Codable {
     var reputationPenalty: Int
     var quarantineStrikes: Int
     var publishCooldownUntil: Date?
@@ -767,14 +790,14 @@ struct NodeAccountabilitySnapshot: Hashable {
     }
 }
 
-struct NodeSkillStoreStatus: Hashable {
+struct NodeSkillStoreStatus: Hashable, Codable {
     var eligible: Bool
     var publishedSkillCount: Int
     var publishEndpoint: String?
     var hint: String?
 }
 
-struct NodeHeartbeatSnapshot: Hashable {
+struct NodeHeartbeatSnapshot: Hashable, Codable {
     var nextHeartbeatAt: Date?
     var availableTasks: [NodeTaskPreview]
     var availableWork: [NodeTaskPreview]
@@ -789,7 +812,7 @@ struct NodeHeartbeatSnapshot: Hashable {
     }
 }
 
-struct NodeRecord: Identifiable, Hashable {
+struct NodeRecord: Identifiable, Hashable, Codable {
     let id: UUID
     var name: String
     var senderID: String
@@ -807,6 +830,7 @@ struct NodeRecord: Identifiable, Hashable {
     var claimURL: String?
     var referralCode: String?
     var survivalStatus: String?
+    var reputationScore: Double? = nil
     var nodeSecretStored: Bool
     var lastErrorMessage: String?
     var notes: String
@@ -1561,6 +1585,95 @@ struct RemoteOrderDetail: Decodable, Hashable {
         finalAssetURL = payload.finalAssetURL
         submissions = payload.submissions
         timeline = payload.timeline
+    }
+}
+
+struct BountyAnswerDraft: Identifiable, Codable, Hashable {
+    var taskKey: String
+    var taskID: String?
+    var bountyID: String?
+    var questionID: String?
+    var title: String
+    var body: String?
+    var implementationNotes: String
+    var answerText: String
+    var verificationNotes: String
+    var followupQuestion: String
+    var generatedAt: Date?
+    var updatedAt: Date
+    var publishedAssetID: String?
+    var submissionID: String?
+    var submissionStatus: String?
+
+    var id: String { taskKey }
+
+    var hasAnswer: Bool {
+        answerText.nonEmpty != nil
+    }
+
+    static let empty = BountyAnswerDraft(
+        taskKey: "",
+        taskID: nil,
+        bountyID: nil,
+        questionID: nil,
+        title: "",
+        body: nil,
+        implementationNotes: "",
+        answerText: "",
+        verificationNotes: "",
+        followupQuestion: "",
+        generatedAt: nil,
+        updatedAt: Date(),
+        publishedAssetID: nil,
+        submissionID: nil,
+        submissionStatus: nil
+    )
+}
+
+enum BountyExecutionProvider: String, CaseIterable, Identifiable, Codable {
+    case codexCLI
+    case claudeCode
+    case directModel
+    case manual
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .codexCLI:
+            return AppLocalization.string("bounties.executor.codex", fallback: "Codex CLI")
+        case .claudeCode:
+            return AppLocalization.string("bounties.executor.claude", fallback: "Claude Code")
+        case .directModel:
+            return AppLocalization.string("bounties.executor.direct_model", fallback: "Direct model")
+        case .manual:
+            return AppLocalization.string("bounties.executor.manual", fallback: "Manual")
+        }
+    }
+
+    var note: String {
+        switch self {
+        case .codexCLI:
+            return AppLocalization.string(
+                "bounties.executor.codex.note",
+                fallback: "Recommended here: runs locally, can use your Codex skills, and keeps execution separate from final EvoMap submission."
+            )
+        case .claudeCode:
+            return AppLocalization.string(
+                "bounties.executor.claude.note",
+                fallback: "Good alternative for code-heavy work. Use the generated brief and review its answer before submitting."
+            )
+        case .directModel:
+            return AppLocalization.string(
+                "bounties.executor.direct_model.note",
+                fallback: "Best later for fully automated text-only jobs, but it needs explicit API-key, cost, and skill-runtime controls."
+            )
+        case .manual:
+            return AppLocalization.string(
+                "bounties.executor.manual.note",
+                fallback: "Use the brief as a checklist and write the final answer yourself."
+            )
+        }
     }
 }
 

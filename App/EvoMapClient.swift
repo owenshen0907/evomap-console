@@ -3,9 +3,15 @@ import Foundation
 protocol EvoMapClientProtocol {
     func hello(request: EvoMapHelloRequest) async throws -> EvoMapHelloResponse
     func heartbeat(request: EvoMapHeartbeatRequest) async throws -> EvoMapHeartbeatResponse
+    func nodeProfile(request: EvoMapNodeProfileRequest) async throws -> EvoMapNodeProfileResponse
     func accountBalance(request: EvoMapAccountBalanceRequest) async throws -> EvoMapAccountBalanceResponse
     func listBountyTasks(request: EvoMapBountyTaskListRequest) async throws -> EvoMapBountyTaskListResponse
+    func listPublicBountyTasks(request: EvoMapPublicBountyTaskListRequest) async throws -> EvoMapBountyTaskListResponse
+    func bountyDetail(request: EvoMapBountyDetailRequest) async throws -> EvoMapBountyDetailResponse
     func claimBountyTask(request: EvoMapBountyTaskClaimRequest) async throws -> EvoMapTaskMutationResponse
+    func myBountyTasks(request: EvoMapMyBountyTasksRequest) async throws -> EvoMapMyBountyTasksResponse
+    func publishAssetBundle(request: EvoMapPublishBundleRequest) async throws -> EvoMapPublishBundleResponse
+    func completeBountyTask(request: EvoMapBountyTaskCompleteRequest) async throws -> EvoMapTaskMutationResponse
     func publishSkill(request: EvoMapSkillStoreMutationRequest) async throws -> EvoMapSkillStoreMutationResponse
     func updateSkill(request: EvoMapSkillStoreMutationRequest) async throws -> EvoMapSkillStoreMutationResponse
     func setSkillVisibility(request: EvoMapSkillStoreVisibilityRequest) async throws -> EvoMapSkillStoreMutationResponse
@@ -86,6 +92,11 @@ struct EvoMapAccountBalanceRequest {
     let apiKey: String
 }
 
+struct EvoMapNodeProfileRequest {
+    let baseURL: String
+    let nodeID: String
+}
+
 struct EvoMapBountyTaskListRequest {
     let baseURL: String
     let nodeSecret: String
@@ -93,10 +104,41 @@ struct EvoMapBountyTaskListRequest {
     let limit: Int
 }
 
+struct EvoMapPublicBountyTaskListRequest {
+    let baseURL: String
+    let limit: Int
+    let page: Int
+    let hasBounty: Bool
+}
+
+struct EvoMapBountyDetailRequest {
+    let baseURL: String
+    let bountyID: String
+}
+
 struct EvoMapBountyTaskClaimRequest {
     let baseURL: String
     let nodeSecret: String
     let payload: EvoMapBountyTaskClaimPayload
+}
+
+struct EvoMapMyBountyTasksRequest {
+    let baseURL: String
+    let nodeID: String
+    let nodeSecret: String?
+}
+
+struct EvoMapPublishBundleRequest {
+    let baseURL: String
+    let senderID: String
+    let nodeSecret: String
+    let payload: EvoMapPublishBundlePayload
+}
+
+struct EvoMapBountyTaskCompleteRequest {
+    let baseURL: String
+    let nodeSecret: String
+    let payload: EvoMapBountyTaskCompletePayload
 }
 
 struct EvoMapSkillStoreMutationRequest {
@@ -452,12 +494,100 @@ struct EvoMapTaskAcceptSubmissionPayload: Encodable {
 
 struct EvoMapBountyTaskClaimPayload: Encodable {
     let senderID: String
+    let nodeID: String
     let taskID: String
 
     enum CodingKeys: String, CodingKey {
         case senderID = "sender_id"
+        case nodeID = "node_id"
         case taskID = "task_id"
     }
+}
+
+struct EvoMapBountyTaskCompletePayload: Encodable {
+    let senderID: String
+    let nodeID: String
+    let taskID: String
+    let assetID: String
+    let followupQuestion: String?
+
+    enum CodingKeys: String, CodingKey {
+        case senderID = "sender_id"
+        case nodeID = "node_id"
+        case taskID = "task_id"
+        case assetID = "asset_id"
+        case followupQuestion = "followup_question"
+    }
+}
+
+struct EvoMapPublishBundlePayload: Encodable, Hashable {
+    var assets: [EvoMapPublishAsset]
+}
+
+struct EvoMapPublishAsset: Encodable, Hashable {
+    var type: String
+    var schemaVersion: String?
+    var id: String?
+    var category: String?
+    var signalsMatch: [String]?
+    var summary: String
+    var preconditions: [String]?
+    var strategy: [String]?
+    var constraints: EvoMapPublishAssetConstraints?
+    var validation: [String]?
+    var trigger: [String]?
+    var gene: String?
+    var confidence: Double?
+    var blastRadius: EvoMapPublishAssetBlastRadius?
+    var outcome: EvoMapPublishAssetOutcome?
+    var successStreak: Int?
+    var envFingerprint: [String: String]?
+    var modelName: String?
+    var domain: String?
+    var assetID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case schemaVersion = "schema_version"
+        case id
+        case category
+        case signalsMatch = "signals_match"
+        case summary
+        case preconditions
+        case strategy
+        case constraints
+        case validation
+        case trigger
+        case gene
+        case confidence
+        case blastRadius = "blast_radius"
+        case outcome
+        case successStreak = "success_streak"
+        case envFingerprint = "env_fingerprint"
+        case modelName = "model_name"
+        case domain
+        case assetID = "asset_id"
+    }
+}
+
+struct EvoMapPublishAssetConstraints: Encodable, Hashable {
+    var maxFiles: Int
+    var forbiddenPaths: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case maxFiles = "max_files"
+        case forbiddenPaths = "forbidden_paths"
+    }
+}
+
+struct EvoMapPublishAssetBlastRadius: Encodable, Hashable {
+    var files: Int
+    var lines: Int
+}
+
+struct EvoMapPublishAssetOutcome: Encodable, Hashable {
+    var status: String
+    var score: Double
 }
 
 struct EvoMapKnowledgeGraphQueryPayload: Encodable {
@@ -567,6 +697,11 @@ struct EvoMapHelloResponse: Decodable {
     let nodeSecretStatus: String?
     let claimCode: String?
     let claimURL: String?
+    let claimed: Bool?
+    let claimState: String?
+    let claimStatus: String?
+    let bindingStatus: String?
+    let claimedAt: String?
     let creditBalance: Int?
     let survivalStatus: String?
     let referralCode: String?
@@ -585,6 +720,11 @@ struct EvoMapHelloResponse: Decodable {
         case nodeSecretStatus = "node_secret_status"
         case claimCode = "claim_code"
         case claimURL = "claim_url"
+        case claimed
+        case claimState = "claim_state"
+        case claimStatus = "claim_status"
+        case bindingStatus = "binding_status"
+        case claimedAt = "claimed_at"
         case creditBalance = "credit_balance"
         case survivalStatus = "survival_status"
         case referralCode = "referral_code"
@@ -621,6 +761,28 @@ struct EvoMapHelloResponse: Decodable {
         nodeSecretStatus = Self.string(keys: ["node_secret_status", "nodeSecretStatus"], preferred: preferred)
         claimCode = Self.string(keys: ["claim_code", "claimCode"], preferred: preferred)
         claimURL = Self.string(keys: ["claim_url", "claimURL"], preferred: preferred)
+        claimed = Self.bool(
+            keys: [
+                "claimed", "is_claimed", "isClaimed",
+                "account_claimed", "accountClaimed",
+                "account_bound", "accountBound",
+                "bound", "node_claimed", "nodeClaimed",
+            ],
+            preferred: preferred
+        )
+        claimState = Self.string(
+            keys: ["claim_state", "claimState", "node_claim_state", "nodeClaimState"],
+            preferred: preferred
+        )
+        claimStatus = Self.string(
+            keys: ["claim_status", "claimStatus", "account_claim_status", "accountClaimStatus"],
+            preferred: preferred
+        )
+        bindingStatus = Self.string(
+            keys: ["binding_status", "bindingStatus", "account_binding_status", "accountBindingStatus"],
+            preferred: preferred
+        )
+        claimedAt = Self.string(keys: ["claimed_at", "claimedAt"], preferred: preferred)
         creditBalance = Self.int(keys: ["credit_balance", "creditBalance", "balance", "credits"], preferred: preferred)
         survivalStatus = Self.string(keys: ["survival_status", "survivalStatus"], preferred: preferred)
         referralCode = Self.string(keys: ["referral_code", "referralCode"], preferred: preferred)
@@ -665,6 +827,15 @@ struct EvoMapHelloResponse: Decodable {
     private static func int(keys: [String], preferred containers: [JSONValue]) -> Int? {
         for container in containers {
             if let value = container.directInt(forKeys: keys) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func bool(keys: [String], preferred containers: [JSONValue]) -> Bool? {
+        for container in containers {
+            if let value = container.directBool(forKeys: keys) {
                 return value
             }
         }
@@ -748,6 +919,36 @@ struct EvoMapTaskSummary: Decodable, Hashable {
         case domain
         case kind
     }
+
+    init(
+        taskID: String?,
+        title: String?,
+        summary: String?,
+        bountyCredits: Int?,
+        rewardCredits: Int?,
+        domain: String?,
+        kind: String?
+    ) {
+        self.taskID = taskID
+        self.title = title
+        self.summary = summary
+        self.bountyCredits = bountyCredits
+        self.rewardCredits = rewardCredits
+        self.domain = domain
+        self.kind = kind
+    }
+
+    fileprivate init(value: JSONValue) {
+        self.init(
+            taskID: value.recursiveString(forKeys: ["task_id", "taskID", "id"]),
+            title: value.recursiveString(forKeys: ["title", "name", "question"]),
+            summary: value.recursiveString(forKeys: ["summary", "description", "body", "prompt"]),
+            bountyCredits: value.recursiveInt(forKeys: ["bounty_credits", "bountyCredits", "bounty"]),
+            rewardCredits: value.recursiveInt(forKeys: ["reward_credits", "rewardCredits", "reward", "credits"]),
+            domain: value.recursiveString(forKeys: ["domain", "category", "topic"]),
+            kind: value.recursiveString(forKeys: ["kind", "type"])
+        )
+    }
 }
 
 struct EvoMapNetworkManifest: Decodable, Hashable {
@@ -759,6 +960,11 @@ struct EvoMapHeartbeatResponse: Decodable {
     let status: String?
     let creditBalance: Int?
     let survivalStatus: String?
+    let claimed: Bool?
+    let claimState: String?
+    let claimStatus: String?
+    let bindingStatus: String?
+    let claimedAt: String?
     let nextHeartbeatMS: Int?
     let availableTasks: [EvoMapTaskSummary]?
     let availableWork: [EvoMapTaskSummary]?
@@ -773,6 +979,11 @@ struct EvoMapHeartbeatResponse: Decodable {
         case status
         case creditBalance = "credit_balance"
         case survivalStatus = "survival_status"
+        case claimed
+        case claimState = "claim_state"
+        case claimStatus = "claim_status"
+        case bindingStatus = "binding_status"
+        case claimedAt = "claimed_at"
         case nextHeartbeatMS = "next_heartbeat_ms"
         case availableTasks = "available_tasks"
         case availableWork = "available_work"
@@ -782,6 +993,163 @@ struct EvoMapHeartbeatResponse: Decodable {
         case accountability
         case skillStore = "skill_store"
         case message
+    }
+
+    init(from decoder: Decoder) throws {
+        let root = try JSONValue(from: decoder)
+        let payload = Self.responsePayload(from: root)
+        let preferred = payload == root ? [payload] : [payload, root]
+
+        status = Self.string(keys: ["status", "state"], preferred: preferred)
+        creditBalance = Self.int(keys: ["credit_balance", "creditBalance", "balance", "credits"], preferred: preferred)
+        survivalStatus = Self.string(keys: ["survival_status", "survivalStatus"], preferred: preferred)
+        claimed = Self.bool(
+            keys: [
+                "claimed", "is_claimed", "isClaimed",
+                "account_claimed", "accountClaimed",
+                "account_bound", "accountBound",
+                "bound", "node_claimed", "nodeClaimed",
+            ],
+            preferred: preferred
+        )
+        claimState = Self.string(
+            keys: ["claim_state", "claimState", "node_claim_state", "nodeClaimState"],
+            preferred: preferred
+        )
+        claimStatus = Self.string(
+            keys: ["claim_status", "claimStatus", "account_claim_status", "accountClaimStatus"],
+            preferred: preferred
+        )
+        bindingStatus = Self.string(
+            keys: ["binding_status", "bindingStatus", "account_binding_status", "accountBindingStatus"],
+            preferred: preferred
+        )
+        claimedAt = Self.string(keys: ["claimed_at", "claimedAt"], preferred: preferred)
+        nextHeartbeatMS = Self.int(keys: ["next_heartbeat_ms", "nextHeartbeatMS", "nextHeartbeatMs"], preferred: preferred)
+        availableTasks = Self.taskSummaries(from: Self.array(
+            keys: ["available_tasks", "availableTasks", "tasks", "recommended_tasks"],
+            preferred: preferred
+        ))
+        availableWork = Self.taskSummaries(from: Self.array(
+            keys: ["available_work", "availableWork", "work"],
+            preferred: preferred
+        ))
+        overdueTasks = Self.overdueTasks(from: Self.array(
+            keys: ["overdue_tasks", "overdueTasks"],
+            preferred: preferred
+        ))
+        pendingEvents = Self.pendingEvents(from: Self.array(
+            keys: ["pending_events", "pendingEvents", "events"],
+            preferred: preferred
+        ))
+        peers = Self.peers(from: Self.array(keys: ["peers", "nodes"], preferred: preferred))
+        accountability = Self.accountability(from: Self.value(keys: ["accountability"], preferred: preferred))
+        skillStore = Self.skillStore(from: Self.value(keys: ["skill_store", "skillStore"], preferred: preferred))
+        message = Self.string(keys: ["message", "detail", "reason"], preferred: preferred)
+    }
+
+    private static func responsePayload(from root: JSONValue) -> JSONValue {
+        for path in [
+            ["payload"],
+            ["data", "payload"],
+            ["result", "payload"],
+            ["data"],
+            ["result"],
+        ] {
+            if let value = root.value(at: path) {
+                return value
+            }
+        }
+        return root
+    }
+
+    private static func string(keys: [String], preferred containers: [JSONValue]) -> String? {
+        for container in containers {
+            if let value = container.directString(forKeys: keys)?.nonEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func int(keys: [String], preferred containers: [JSONValue]) -> Int? {
+        for container in containers {
+            if let value = container.directInt(forKeys: keys) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func bool(keys: [String], preferred containers: [JSONValue]) -> Bool? {
+        for container in containers {
+            if let value = container.directBool(forKeys: keys) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func array(keys: [String], preferred containers: [JSONValue]) -> [JSONValue]? {
+        for container in containers {
+            if let value = container.directArray(forKeys: keys) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func value(keys: [String], preferred containers: [JSONValue]) -> JSONValue? {
+        for container in containers {
+            for key in keys {
+                if let value = container.value(at: [key]) {
+                    return value
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func taskSummaries(from values: [JSONValue]?) -> [EvoMapTaskSummary]? {
+        let summaries = values?.compactMap { value -> EvoMapTaskSummary? in
+            guard value.objectValue != nil else { return nil }
+            return EvoMapTaskSummary(value: value)
+        } ?? []
+        return summaries.isEmpty ? nil : summaries
+    }
+
+    private static func overdueTasks(from values: [JSONValue]?) -> [EvoMapOverdueTask]? {
+        let tasks = values?.compactMap { value -> EvoMapOverdueTask? in
+            guard value.objectValue != nil else { return nil }
+            return EvoMapOverdueTask(value: value)
+        } ?? []
+        return tasks.isEmpty ? nil : tasks
+    }
+
+    private static func pendingEvents(from values: [JSONValue]?) -> [EvoMapPendingEvent]? {
+        let events = values?.compactMap { value -> EvoMapPendingEvent? in
+            guard value.objectValue != nil else { return nil }
+            return EvoMapPendingEvent(value: value)
+        } ?? []
+        return events.isEmpty ? nil : events
+    }
+
+    private static func peers(from values: [JSONValue]?) -> [EvoMapPeer]? {
+        let peers = values?.compactMap { value -> EvoMapPeer? in
+            guard value.objectValue != nil else { return nil }
+            return EvoMapPeer(value: value)
+        } ?? []
+        return peers.isEmpty ? nil : peers
+    }
+
+    private static func accountability(from value: JSONValue?) -> EvoMapAccountability? {
+        guard let value, value.objectValue != nil else { return nil }
+        return EvoMapAccountability(value: value)
+    }
+
+    private static func skillStore(from value: JSONValue?) -> EvoMapSkillStoreStatus? {
+        guard let value, value.objectValue != nil else { return nil }
+        return EvoMapSkillStoreStatus(value: value)
     }
 }
 
@@ -820,8 +1188,39 @@ struct EvoMapAccountBalanceResponse: Decodable, Hashable {
     }
 }
 
+struct EvoMapNodeProfileResponse: Decodable, Hashable {
+    let nodeID: String?
+    let reputationScore: Double?
+    let reputationPenalty: Int?
+    let quarantineStrikes: Int?
+    let totalPublished: Int?
+    let status: String?
+    let online: Bool?
+    let lastSeenAt: String?
+    let survivalStatus: String?
+    let message: String?
+
+    init(from decoder: Decoder) throws {
+        let root = try JSONValue(from: decoder)
+        nodeID = root.recursiveString(forKeys: ["node_id", "nodeID", "id"])
+        reputationScore = root.recursiveDouble(forKeys: ["reputation_score", "reputationScore", "reputation"])
+        reputationPenalty = root.recursiveInt(forKeys: ["reputation_penalty", "reputationPenalty"])
+        quarantineStrikes = root.recursiveInt(forKeys: ["quarantine_strikes", "quarantineStrikes"])
+        totalPublished = root.recursiveInt(forKeys: ["total_published", "totalPublished"])
+        status = root.recursiveString(forKeys: ["status"])
+        online = root.recursiveBool(forKeys: ["online"])
+        lastSeenAt = root.recursiveString(forKeys: ["last_seen_at", "lastSeenAt"])
+        survivalStatus = root.recursiveString(forKeys: ["survival_status", "survivalStatus"])
+        message = root.recursiveString(forKeys: ["message", "detail", "reason"])
+    }
+}
+
 struct EvoMapBountyTaskListResponse: Decodable {
     let tasks: [EvoMapBountyTask]
+    let total: Int?
+    let openCount: Int?
+    let matchedCount: Int?
+    let totalBountyAmount: Int?
     let status: String?
     let message: String?
 
@@ -834,6 +1233,10 @@ struct EvoMapBountyTaskListResponse: Decodable {
         tasks = taskValues.enumerated().map { index, value in
             EvoMapBountyTask(value: value, fallbackIndex: index)
         }
+        total = root.recursiveInt(forKeys: ["total", "count_total", "total_count"])
+        openCount = root.recursiveInt(forKeys: ["open_count", "openCount"])
+        matchedCount = root.recursiveInt(forKeys: ["matched_count", "matchedCount"])
+        totalBountyAmount = root.recursiveInt(forKeys: ["total_bounty_amount", "totalBountyAmount"])
         status = root.recursiveString(forKeys: ["status"])
         message = root.recursiveString(forKeys: ["message", "detail", "reason"])
     }
@@ -841,6 +1244,9 @@ struct EvoMapBountyTaskListResponse: Decodable {
 
 struct EvoMapBountyTask: Identifiable, Hashable {
     let taskID: String
+    let claimTaskID: String?
+    let bountyID: String?
+    let questionID: String?
     let title: String
     let summary: String?
     let bountyCredits: Int?
@@ -850,28 +1256,170 @@ struct EvoMapBountyTask: Identifiable, Hashable {
     let status: String?
     let createdAt: String?
     let deadline: String?
+    let minReputation: Int?
+    let submissionCount: Int?
 
     var id: String {
-        taskID
+        claimTaskID ?? bountyID ?? questionID ?? taskID
     }
 
     var displayCredits: Int? {
         bountyCredits ?? rewardCredits
     }
 
+    var claimableTaskID: String? {
+        claimTaskID?.nonEmpty
+    }
+
     fileprivate init(value: JSONValue, fallbackIndex: Int) {
-        taskID = value.recursiveString(forKeys: ["task_id", "id", "taskID"])
+        let resolvedClaimTaskID = value.recursiveString(forKeys: ["task_id", "taskID"])
+        let resolvedBountyID = value.recursiveString(forKeys: ["bounty_id", "bountyID"])
+        let resolvedQuestionID = value.recursiveString(forKeys: ["question_id", "questionID"])
+        claimTaskID = resolvedClaimTaskID
+        bountyID = resolvedBountyID
+        questionID = resolvedQuestionID
+        taskID = resolvedClaimTaskID
+            ?? resolvedQuestionID
+            ?? resolvedBountyID
+            ?? value.recursiveString(forKeys: ["id"])
             ?? "bounty-task-\(fallbackIndex + 1)"
         title = value.recursiveString(forKeys: ["title", "question", "name"])
             ?? taskID
         summary = value.recursiveString(forKeys: ["summary", "description", "body", "prompt"])
-        bountyCredits = value.recursiveInt(forKeys: ["bounty_credits", "bounty", "bountyCredits"])
+        bountyCredits = value.recursiveInt(forKeys: ["bounty_credits", "bounty", "bountyCredits", "bounty_amount"])
         rewardCredits = value.recursiveInt(forKeys: ["reward_credits", "reward", "credits", "price"])
         domain = value.recursiveString(forKeys: ["domain", "category", "topic"])
-        kind = value.recursiveString(forKeys: ["kind", "type"])
-        status = value.recursiveString(forKeys: ["status", "state"])
+        kind = value.recursiveString(forKeys: ["kind", "type", "intent"])
+        status = value.recursiveString(forKeys: ["status", "state", "bounty_status", "task_status"])
         createdAt = value.recursiveString(forKeys: ["created_at", "createdAt"])
         deadline = value.recursiveString(forKeys: ["deadline", "due_at", "expires_at", "commitment_deadline"])
+        minReputation = value.recursiveInt(forKeys: ["min_reputation", "minReputation"])
+        submissionCount = value.recursiveInt(forKeys: ["submission_count", "submissionCount"])
+    }
+
+    init(claimedTask: EvoMapClaimedBountyTask, fallbackIndex: Int = 0) {
+        claimTaskID = claimedTask.taskID
+        bountyID = claimedTask.bountyID
+        questionID = claimedTask.questionID
+        taskID = claimedTask.taskID
+        title = claimedTask.title.nonEmpty ?? claimedTask.taskID
+        summary = claimedTask.body
+        bountyCredits = claimedTask.bountyCredits
+        rewardCredits = claimedTask.rewardCredits
+        domain = nil
+        kind = "bounty"
+        status = claimedTask.status
+        createdAt = nil
+        deadline = claimedTask.expiresAt
+        minReputation = claimedTask.minReputation
+        submissionCount = nil
+    }
+}
+
+struct EvoMapBountyDetailResponse: Decodable {
+    let bountyID: String?
+    let questionID: String?
+    let taskID: String?
+    let title: String?
+    let status: String?
+    let amount: Int?
+    let message: String?
+
+    init(from decoder: Decoder) throws {
+        let root = try JSONValue(from: decoder)
+        bountyID = root.recursiveString(forKeys: ["bounty_id", "bountyID", "id"])
+        questionID = root.recursiveString(forKeys: ["question_id", "questionID"])
+        taskID = root.recursiveString(forKeys: ["task_id", "taskID"])
+        title = root.recursiveString(forKeys: ["title", "question", "name"])
+        status = root.recursiveString(forKeys: ["status", "task_status", "bounty_status"])
+        amount = root.recursiveInt(forKeys: ["amount", "bounty_amount", "bounty"])
+        message = root.recursiveString(forKeys: ["message", "detail", "reason"])
+    }
+}
+
+struct EvoMapMyBountyTasksResponse: Decodable {
+    let tasks: [EvoMapClaimedBountyTask]
+    let count: Int?
+    let status: String?
+    let message: String?
+
+    init(from decoder: Decoder) throws {
+        let root = try JSONValue(from: decoder)
+        let taskValues = root.recursiveArray(forKeys: [
+            "tasks", "claimed_tasks", "items", "results", "data",
+        ]) ?? root.arrayValue ?? []
+
+        tasks = taskValues.enumerated().map { index, value in
+            EvoMapClaimedBountyTask(value: value, fallbackIndex: index)
+        }
+        count = root.recursiveInt(forKeys: ["count", "total", "total_count"])
+        status = root.recursiveString(forKeys: ["status"])
+        message = root.recursiveString(forKeys: ["message", "detail", "reason"])
+    }
+}
+
+struct EvoMapClaimedBountyTask: Identifiable, Hashable {
+    let taskID: String
+    let bountyID: String?
+    let questionID: String?
+    let title: String
+    let body: String?
+    let status: String?
+    let minReputation: Int?
+    let expiresAt: String?
+    let bountyCredits: Int?
+    let rewardCredits: Int?
+    let mySubmissionID: String?
+    let mySubmissionStatus: String?
+    let mySubmissionAssetID: String?
+
+    var id: String { taskID }
+
+    fileprivate init(value: JSONValue, fallbackIndex: Int) {
+        let resolvedTaskID = value.recursiveString(forKeys: ["task_id", "taskID", "id"])
+            ?? "claimed-bounty-task-\(fallbackIndex + 1)"
+        let submissionAssetContainers = [
+            value.value(at: ["my_submission_asset"]),
+            value.value(at: ["mySubmissionAsset"]),
+            value.value(at: ["submission_asset"]),
+            value.value(at: ["asset"]),
+        ]
+        .compactMap { $0 }
+
+        taskID = resolvedTaskID
+        bountyID = value.recursiveString(forKeys: ["bounty_id", "bountyID"])
+        questionID = value.recursiveString(forKeys: ["question_id", "questionID"])
+        title = value.recursiveString(forKeys: ["title", "question", "name"])
+            ?? resolvedTaskID
+        body = value.recursiveString(forKeys: ["body", "summary", "description", "prompt"])
+        status = value.recursiveString(forKeys: ["status", "state", "task_status"])
+        minReputation = value.recursiveInt(forKeys: ["min_reputation", "minReputation"])
+        expiresAt = value.recursiveString(forKeys: ["expires_at", "expiresAt", "deadline", "due_at"])
+        bountyCredits = value.recursiveInt(forKeys: ["bounty_credits", "bounty", "bountyCredits", "bounty_amount"])
+        rewardCredits = value.recursiveInt(forKeys: ["reward_credits", "reward", "credits", "price"])
+        mySubmissionID = value.recursiveString(forKeys: ["my_submission_id", "mySubmissionID", "submission_id"])
+        mySubmissionStatus = value.recursiveString(forKeys: ["my_submission_status", "mySubmissionStatus", "submission_status"])
+        mySubmissionAssetID = submissionAssetContainers
+            .compactMap { $0.recursiveString(forKeys: ["asset_id", "assetID", "id"]) }
+            .first
+            ?? value.recursiveString(forKeys: ["my_submission_asset_id", "mySubmissionAssetID", "asset_id"])
+    }
+}
+
+struct EvoMapPublishBundleResponse: Decodable {
+    let status: String?
+    let message: String?
+    let bundleID: String?
+    let assetIDs: [String]
+
+    init(from decoder: Decoder) throws {
+        let root = try JSONValue(from: decoder)
+        let assetValues = root.recursiveArray(forKeys: ["assets", "published_assets", "items"]) ?? []
+
+        status = root.recursiveString(forKeys: ["status"])
+        message = root.recursiveString(forKeys: ["message", "detail", "reason"])
+        bundleID = root.recursiveString(forKeys: ["bundle_id", "bundleID", "bundleId"])
+        assetIDs = assetValues.compactMap { $0.recursiveString(forKeys: ["asset_id", "assetID", "id"]) }
     }
 }
 
@@ -886,6 +1434,13 @@ struct EvoMapSkillStoreStatus: Decodable, Hashable {
         case publishedSkills = "published_skills"
         case publishEndpoint = "publish_endpoint"
         case hint
+    }
+
+    fileprivate init(value: JSONValue) {
+        eligible = value.recursiveBool(forKeys: ["eligible", "enabled"])
+        publishedSkills = value.recursiveInt(forKeys: ["published_skills", "publishedSkills", "count"])
+        publishEndpoint = value.recursiveString(forKeys: ["publish_endpoint", "publishEndpoint", "endpoint"])
+        hint = value.recursiveString(forKeys: ["hint", "message", "detail"])
     }
 }
 
@@ -1501,6 +2056,69 @@ private extension JSONValue {
         return nil
     }
 
+    func directDouble(forKeys keys: [String]) -> Double? {
+        for key in keys {
+            if let value = value(at: [key])?.lossyDouble {
+                return value
+            }
+        }
+        return nil
+    }
+
+    func recursiveDouble(forKeys keys: [String]) -> Double? {
+        if let direct = directDouble(forKeys: keys) {
+            return direct
+        }
+        for child in childValues {
+            if let value = child.recursiveDouble(forKeys: keys) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    func directBool(forKeys keys: [String]) -> Bool? {
+        for key in keys {
+            if let value = value(at: [key])?.lossyBool {
+                return value
+            }
+        }
+        return nil
+    }
+
+    func recursiveBool(forKeys keys: [String]) -> Bool? {
+        if let direct = directBool(forKeys: keys) {
+            return direct
+        }
+        for child in childValues {
+            if let value = child.recursiveBool(forKeys: keys) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    func directDate(forKeys keys: [String]) -> Date? {
+        for key in keys {
+            if let value = value(at: [key])?.lossyDate {
+                return value
+            }
+        }
+        return nil
+    }
+
+    func recursiveDate(forKeys keys: [String]) -> Date? {
+        if let direct = directDate(forKeys: keys) {
+            return direct
+        }
+        for child in childValues {
+            if let value = child.recursiveDate(forKeys: keys) {
+                return value
+            }
+        }
+        return nil
+    }
+
     func directArray(forKeys keys: [String]) -> [JSONValue]? {
         for key in keys {
             if let value = value(at: [key])?.arrayValue {
@@ -1549,6 +2167,57 @@ private extension JSONValue {
             return nil
         }
     }
+
+    var lossyDate: Date? {
+        guard case .string(let value) = self else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return nil }
+
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let standard = ISO8601DateFormatter()
+        standard.formatOptions = [.withInternetDateTime]
+        return fractional.date(from: trimmed) ?? standard.date(from: trimmed)
+    }
+
+    var lossyDouble: Double? {
+        switch self {
+        case .integer(let value):
+            return Double(value)
+        case .double(let value):
+            return value
+        case .string(let value):
+            return Double(value)
+        default:
+            return nil
+        }
+    }
+
+    var lossyBool: Bool? {
+        switch self {
+        case .boolean(let value):
+            return value
+        case .integer(let value):
+            return value != 0
+        case .double(let value):
+            return value != 0
+        case .string(let value):
+            let normalized = value
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+                .replacingOccurrences(of: "-", with: "_")
+                .replacingOccurrences(of: " ", with: "_")
+            if ["true", "yes", "y", "1", "claimed", "bound", "active", "verified", "completed", "complete", "confirmed"].contains(normalized) {
+                return true
+            }
+            if ["false", "no", "n", "0", "unclaimed", "unbound", "pending", "waiting", "inactive", "failed"].contains(normalized) {
+                return false
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
 }
 
 struct EvoMapOverdueTask: Decodable, Hashable {
@@ -1562,6 +2231,13 @@ struct EvoMapOverdueTask: Decodable, Hashable {
         case title
         case commitmentDeadline = "commitment_deadline"
         case overdueMinutes = "overdue_minutes"
+    }
+
+    fileprivate init(value: JSONValue) {
+        taskID = value.recursiveString(forKeys: ["task_id", "taskID", "id"])
+        title = value.recursiveString(forKeys: ["title", "name", "summary"])
+        commitmentDeadline = value.recursiveDate(forKeys: ["commitment_deadline", "commitmentDeadline", "deadline", "due_at"])
+        overdueMinutes = value.recursiveInt(forKeys: ["overdue_minutes", "overdueMinutes", "minutes"])
     }
 }
 
@@ -1579,6 +2255,14 @@ struct EvoMapPendingEvent: Decodable, Hashable {
         case priority
         case payload
     }
+
+    fileprivate init(value: JSONValue) {
+        eventID = value.recursiveString(forKeys: ["event_id", "eventID", "id"])
+        type = value.recursiveString(forKeys: ["type", "event_type", "eventType"])
+        createdAt = value.recursiveDate(forKeys: ["created_at", "createdAt", "timestamp"])
+        priority = value.recursiveInt(forKeys: ["priority"])
+        payload = value.value(at: ["payload"]) ?? value.value(at: ["data"])
+    }
 }
 
 struct EvoMapPeer: Decodable, Hashable {
@@ -1594,6 +2278,14 @@ struct EvoMapPeer: Decodable, Hashable {
         case online
         case reputation
         case workload
+    }
+
+    fileprivate init(value: JSONValue) {
+        nodeID = value.recursiveString(forKeys: ["node_id", "nodeID", "id", "sender_id", "senderID"])
+        alias = value.recursiveString(forKeys: ["alias", "name", "display_name"])
+        online = value.recursiveBool(forKeys: ["online", "is_online", "isOnline"])
+        reputation = value.recursiveDouble(forKeys: ["reputation", "score"])
+        workload = value.recursiveInt(forKeys: ["workload", "load", "pending"])
     }
 }
 
@@ -1622,6 +2314,19 @@ struct EvoMapAccountability: Decodable, Hashable {
         topPatterns = try container.decodeIfPresent([EvoMapErrorPattern].self, forKey: .topPatterns)
             ?? (try container.decodeIfPresent([EvoMapErrorPattern].self, forKey: .errorPatterns))
     }
+
+    fileprivate init(value: JSONValue) {
+        reputationPenalty = value.recursiveInt(forKeys: ["reputation_penalty", "reputationPenalty"])
+        quarantineStrikes = value.recursiveInt(forKeys: ["quarantine_strikes", "quarantineStrikes"])
+        publishCooldownUntil = value.recursiveDate(forKeys: ["publish_cooldown_until", "publishCooldownUntil"])
+        recommendation = value.recursiveString(forKeys: ["recommendation", "message", "hint"])
+        let patternValues = value.recursiveArray(forKeys: ["top_patterns", "topPatterns", "error_patterns", "errorPatterns"])
+        let patterns = patternValues?.compactMap { pattern -> EvoMapErrorPattern? in
+            guard pattern.objectValue != nil else { return nil }
+            return EvoMapErrorPattern(value: pattern)
+        } ?? []
+        topPatterns = patterns.isEmpty ? nil : patterns
+    }
 }
 
 struct EvoMapErrorPattern: Decodable, Hashable {
@@ -1629,6 +2334,13 @@ struct EvoMapErrorPattern: Decodable, Hashable {
     let count: Int?
     let escalation: String?
     let reason: String?
+
+    fileprivate init(value: JSONValue) {
+        fingerprint = value.recursiveString(forKeys: ["fingerprint", "id", "key"])
+        count = value.recursiveInt(forKeys: ["count", "total"])
+        escalation = value.recursiveString(forKeys: ["escalation", "severity", "level"])
+        reason = value.recursiveString(forKeys: ["reason", "message", "detail"])
+    }
 }
 
 indirect enum JSONValue: Decodable, Hashable {
@@ -1772,8 +2484,60 @@ struct EvoMapClient: EvoMapClientProtocol {
         return try await performGetRequest(endpoint: endpoint, bearerToken: request.nodeSecret)
     }
 
+    func nodeProfile(request: EvoMapNodeProfileRequest) async throws -> EvoMapNodeProfileResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/nodes/\(request.nodeID)")
+        return try await performGetRequest(endpoint: endpoint)
+    }
+
+    func listPublicBountyTasks(request: EvoMapPublicBountyTaskListRequest) async throws -> EvoMapBountyTaskListResponse {
+        let endpoint = try makeEndpoint(
+            baseURL: request.baseURL,
+            path: "/api/hub/bounty/questions",
+            queryItems: [
+                URLQueryItem(name: "limit", value: String(request.limit)),
+                URLQueryItem(name: "page", value: String(request.page)),
+                URLQueryItem(name: "has_bounty", value: request.hasBounty ? "true" : "false"),
+            ]
+        )
+        return try await performGetRequest(endpoint: endpoint)
+    }
+
+    func bountyDetail(request: EvoMapBountyDetailRequest) async throws -> EvoMapBountyDetailResponse {
+        let endpoint = try makeEndpoint(
+            baseURL: request.baseURL,
+            path: "/api/hub/bounty/\(request.bountyID)"
+        )
+        return try await performGetRequest(endpoint: endpoint)
+    }
+
     func claimBountyTask(request: EvoMapBountyTaskClaimRequest) async throws -> EvoMapTaskMutationResponse {
         let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/task/claim")
+        return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
+    }
+
+    func myBountyTasks(request: EvoMapMyBountyTasksRequest) async throws -> EvoMapMyBountyTasksResponse {
+        let endpoint = try makeEndpoint(
+            baseURL: request.baseURL,
+            path: "/a2a/task/my",
+            queryItems: [URLQueryItem(name: "node_id", value: request.nodeID)]
+        )
+        return try await performGetRequest(endpoint: endpoint, bearerToken: request.nodeSecret)
+    }
+
+    func publishAssetBundle(request: EvoMapPublishBundleRequest) async throws -> EvoMapPublishBundleResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/publish")
+        let envelope = A2AMessageEnvelope(
+            messageType: "publish",
+            messageID: Self.makeMessageID(),
+            senderID: request.senderID,
+            timestamp: Self.timestampString(),
+            payload: request.payload
+        )
+        return try await performRequest(endpoint: endpoint, method: "POST", body: envelope, bearerToken: request.nodeSecret)
+    }
+
+    func completeBountyTask(request: EvoMapBountyTaskCompleteRequest) async throws -> EvoMapTaskMutationResponse {
+        let endpoint = try makeEndpoint(baseURL: request.baseURL, path: "/a2a/task/complete")
         return try await performRequest(endpoint: endpoint, method: "POST", body: request.payload, bearerToken: request.nodeSecret)
     }
 

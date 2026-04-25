@@ -7,6 +7,8 @@ enum ConsoleAppSettings {
     static let defaultNodeNameKey = "settings.defaultNodeName"
     static let defaultNodeModelKey = "settings.defaultNodeModel"
     static let showRawPayloadsKey = "settings.showRawPayloads"
+    static let patchCourierRelayEmailKey = "settings.patchCourierRelayEmail"
+    static let patchCourierProjectSlugKey = "settings.patchCourierProjectSlug"
 
     private static let kgAPIKeyStore: KnowledgeGraphAPIKeyStoring = KeychainKnowledgeGraphAPIKeyStore()
 
@@ -29,6 +31,14 @@ enum ConsoleAppSettings {
 
     static var showRawPayloads: Bool {
         UserDefaults.standard.object(forKey: showRawPayloadsKey) as? Bool ?? true
+    }
+
+    static var patchCourierRelayEmail: String {
+        normalizedString(for: patchCourierRelayEmailKey) ?? ""
+    }
+
+    static var patchCourierProjectSlug: String {
+        normalizedString(for: patchCourierProjectSlugKey) ?? "evomap-tasks"
     }
 
     static var appLanguage: ConsoleLanguage {

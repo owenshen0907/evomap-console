@@ -5,6 +5,7 @@ protocol NodeSecretStoring {
     func loadNodeSecret(for senderID: String) throws -> String?
     func saveNodeSecret(_ secret: String, for senderID: String) throws
     func deleteNodeSecret(for senderID: String) throws
+    func listStoredSenderIDs() throws -> [String]
 }
 
 enum NodeSecretStoreError: LocalizedError {
@@ -95,5 +96,36 @@ struct KeychainNodeSecretStore: NodeSecretStoring {
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw NodeSecretStoreError.unhandledStatus(status)
         }
+    }
+
+    func listStoredSenderIDs() throws -> [String] {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecMatchLimit: kSecMatchLimitAll,
+            kSecReturnAttributes: true,
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            let items = result as? [[CFString: Any]] ?? []
+            return items
+                .compactMap { $0[kSecAttrAccount] as? String }
+                .filter { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+                .uniqued()
+        case errSecItemNotFound:
+            return []
+        default:
+            throw NodeSecretStoreError.unhandledStatus(status)
+        }
+    }
+}
+
+private extension Array where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
     }
 }

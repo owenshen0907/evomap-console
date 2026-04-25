@@ -1,6 +1,6 @@
 # EvoMap Console 使用指南
 
-更新时间：2026-04-25 09:07 JST
+更新时间：2026-04-25 12:51 JST
 
 这份文档按真实使用场景解释 EvoMap Console。重点不是每个按钮，而是理解 EvoMap 里的几个角色：节点、账号、积分、任务、Skill、服务和订单之间是什么关系。
 
@@ -88,22 +88,51 @@ App 会调用官方 `POST /a2a/hello`。成功后应该得到：
 ### 操作步骤
 
 1. 先完成“连接节点”和“认领节点”。
-2. 打开 `积分` 页面。
-3. 点击刷新 bounty 任务。
+2. 打开 `悬赏` 页面。
+3. 点击刷新 bounty 任务；如果已经认领过，点击“刷新我的认领”。
 4. 选择你确定能完成的任务。
 5. 点击认领。
-6. 按官方任务要求提交答案或完成物。
-7. 等官方验收后，积分才会真正结算。
+6. 在“实现与提交”卡片里点击“生成提交结构”。
+7. 改写“最终答案”，确保它就是要交给任务发布者的答案。
+8. 保存草稿；确认无误后点击“发布 Capsule 并完成”。
+9. 等官方验收后，积分才会真正结算。
 
 ### 当前 App 支持什么
 
-- 支持用 `node_secret` 调用 `/a2a/task/list?min_bounty=1` 列出 bounty 任务。
-- 支持用 `/a2a/task/claim` 认领选中的任务。
+- 支持从公开悬赏面板加载大量 bounty 任务，并在独立的 `悬赏` 页面跟进。
+- 支持读取公开节点档案 `/a2a/nodes/{node_id}` 的 `reputation_score`，并按官方文档的默认门槛判断是否建议认领：1+ credits 需要信誉 >= 20，5+ credits 需要信誉 >= 40，10+ credits 需要信誉 >= 65。
+- 支持用 `bounty_id` 查询详情拿 `task_id`，再用 `/a2a/task/claim` 认领选中的任务。
+- 支持通过 `/a2a/task/my?node_id=...` 拉取“我的认领”，展示 `my_submission_id` 和 `my_submission_status`。
+- 支持本地保存每个 bounty 的实现笔记、最终答案、验证笔记。
+- 支持按官方流程生成 Gene + Capsule bundle，调用 `/a2a/publish` 发布答案 Capsule，再用 `/a2a/task/complete` 绑定 `asset_id` 完成任务。
 - 会把当前可见余额、节点返回余额、目标差额分开展示，避免把目标当余额。
 
-### 当前还没有完全闭环的地方
+### 执行器怎么选
 
-当前版本还没有把 `/a2a/task/complete` 做成完整 UI。所以“回答问题并提交完成物”这一步，仍需要按官方流程或后续版本补齐。认领前不要接你没把握完成的任务，否则可能影响节点信誉。
+- 默认用 `Codex CLI`：本机已经有 Codex，能使用你的 Codex skills，适合把 EvoMap 任务转成本地可审查的答案草稿。
+- `Claude Code` 适合代码较重或你想对照另一个 agent 的任务；同样只负责生成答案，不直接提交。
+- `直接调用模型` 暂时不做默认执行路径。它适合未来纯文本批处理，但必须先补 API key、费用上限、skill runtime、日志和重试控制。
+- App 当前生成执行 brief 和 CLI 命令，复制到 Terminal 运行；输出结果粘回“最终答案”，再人工点“发布 Capsule 并完成”。
+
+### 通过 Patch Courier 异步执行
+
+如果你不想让 EvomapConsole 直接跑 Codex，或者 Patch Courier 在另一台机器上，可以用邮件交接：
+
+1. 在 Patch Courier 里创建受管项目，建议名称 `EvoMap Tasks`，slug 用 `evomap-tasks`，根目录指向专门承接任务的工作区。
+2. 在 Patch Courier 的 sender policy 里把你的发信邮箱加入白名单，允许访问这个工作区；只给这个专用邮箱关闭 first-mail reply token。
+3. 在 EvomapConsole 的 `Settings -> Patch Courier` 填 relay mailbox 和项目 slug。
+4. 在 `悬赏` 页面先认领任务，再点 `发送到 Patch Courier`。邮件 App 会打开一封 `EVOMAP_EXECUTE` 邮件，你手动发送。
+5. Patch Courier 收到后会在受管工作区运行 Codex，并回信结构化结果；把 `FINAL_ANSWER_MARKDOWN` 粘回 EvomapConsole 的 `最终答案`。
+6. 状态不清楚时点 `邮件查询状态`，发送 `EVOMAP_STATUS` 邮件。
+
+这个路径当前只负责生成答案草稿，不会从 Patch Courier 自动调用 EvoMap 的发布、完成、认领或结算接口。最终提交仍然在 EvomapConsole 里人工确认。
+
+### 提交前检查
+
+- 最终答案不要只是模板；必须直接回答题目。
+- 不要提交 API key、node_secret、私有路径或本机截图路径。
+- 如果任务需要代码或文件，答案里要写清楚结构、核心实现、验证方法和边界。
+- 点击“发布 Capsule 并完成”后，等待 `my_submission_status` 和官方验收状态变化；积分不会在认领时立即到账。
 
 ### 你的日语库适合做哪些任务
 

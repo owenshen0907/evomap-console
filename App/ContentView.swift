@@ -35,10 +35,12 @@ struct ContentView: View {
                 } label: {
                     Label(
                         (store.selectedSection == .nodes && store.isRefreshingNodeHeartbeat)
+                            || (store.selectedSection == .bounties && store.isLoadingBountyTasks)
                             || (store.selectedSection == .orders && store.isRefreshingOrders)
                             ? AppLocalization.string("toolbar.refreshing", fallback: "Refreshing")
                             : AppLocalization.string("toolbar.refresh", fallback: "Refresh"),
                         systemImage: (store.selectedSection == .nodes && store.isRefreshingNodeHeartbeat)
+                            || (store.selectedSection == .bounties && store.isLoadingBountyTasks)
                             || (store.selectedSection == .orders && store.isRefreshingOrders)
                             ? "arrow.trianglehead.2.clockwise.rotate.90"
                             : "arrow.clockwise"
@@ -46,6 +48,7 @@ struct ContentView: View {
                 }
                 .disabled(
                     (store.selectedSection == .nodes && store.isRefreshingNodeHeartbeat)
+                        || (store.selectedSection == .bounties && store.isLoadingBountyTasks)
                         || (store.selectedSection == .orders && store.isRefreshingOrders)
                 )
             }
@@ -215,6 +218,8 @@ struct ContentView: View {
             NodesTableView(store: store)
         case .credits:
             CreditsListView(store: store)
+        case .bounties:
+            BountyTasksListView(store: store)
         case .skills:
             SkillsListView(store: store)
         case .services:
@@ -234,9 +239,11 @@ struct ContentView: View {
         case .overview:
             OverviewDetailView(store: store)
         case .nodes:
-            NodeDetailView(node: store.selectedNode)
+            NodeDetailView(store: store, node: store.selectedNode)
         case .credits:
             CreditsDetailView(store: store)
+        case .bounties:
+            BountyTaskDetailView(store: store)
         case .skills:
             SkillsDetailView(store: store)
         case .services:
@@ -259,6 +266,8 @@ struct ContentView: View {
             NodeInspectorView(node: store.selectedNode)
         case .credits:
             CreditsInspectorView(store: store)
+        case .bounties:
+            BountyInspectorView(store: store)
         case .skills:
             SkillsInspectorView(store: store)
         case .services:
@@ -360,9 +369,16 @@ private struct OverviewDetailView: View {
             DayOneStep(
                 id: "credits",
                 title: AppLocalization.string("overview.day_one.credits.title", fallback: "Use Credits as the operating queue"),
-                detail: AppLocalization.string("overview.day_one.credits.detail", fallback: "After the node is claimed, refresh bounties, claim only tasks you can solve, then publish and complete the solution through the A2A flow."),
-                systemImage: "target",
+                detail: AppLocalization.string("overview.day_one.credits.detail", fallback: "After the node is claimed, use Credits to understand balance, target, and the earning flow."),
+                systemImage: "creditcard.and.123",
                 targetSection: .credits
+            ),
+            DayOneStep(
+                id: "bounties",
+                title: AppLocalization.string("overview.day_one.bounties.title", fallback: "Track bounty tasks"),
+                detail: AppLocalization.string("overview.day_one.bounties.detail", fallback: "Load the public bounty board, follow promising tasks, then claim only tasks you can answer cleanly."),
+                systemImage: "target",
+                targetSection: .bounties
             ),
             DayOneStep(
                 id: "skill",
@@ -395,8 +411,13 @@ private struct OverviewDetailView: View {
             ),
             ModuleGuideItem(
                 section: .credits,
-                purpose: AppLocalization.string("overview.module.credits.purpose", fallback: "Explain balances, show the Premium target, refresh bounty tasks, and guide the claim-answer-complete credit flow."),
-                useWhen: AppLocalization.string("overview.module.credits.when", fallback: "Use after the node is claimed to find work that can earn credits.")
+                purpose: AppLocalization.string("overview.module.credits.purpose", fallback: "Explain balances, show the Premium target, and keep the earning workflow linear."),
+                useWhen: AppLocalization.string("overview.module.credits.when", fallback: "Use after the node is claimed to understand credit state and next steps.")
+            ),
+            ModuleGuideItem(
+                section: .bounties,
+                purpose: AppLocalization.string("overview.module.bounties.purpose", fallback: "Load many public bounty tasks, translate task text locally, follow promising tasks, and claim selected work."),
+                useWhen: AppLocalization.string("overview.module.bounties.when", fallback: "Use when you are ready to choose one bounty-backed question to answer.")
             ),
             ModuleGuideItem(
                 section: .skills,
@@ -697,8 +718,16 @@ private struct NodesTableView: View {
         Table(store.filteredNodes, selection: $store.selectedNodeID) {
             TableColumn(AppLocalization.string("node.column.node", fallback: "Node")) { node in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(AppLocalization.phrase(node.name))
-                        .fontWeight(.semibold)
+                    HStack(spacing: 6) {
+                        Text(AppLocalization.phrase(node.name))
+                            .fontWeight(.semibold)
+                        if node.isSampleData {
+                            BadgeLabel(
+                                text: AppLocalization.string("overview.data_source.badge_demo", fallback: "Demo"),
+                                tintName: "secondary"
+                            )
+                        }
+                    }
                     Text(node.senderID)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -749,6 +778,9 @@ private struct NodesTableView: View {
 }
 
 private struct NodeDetailView: View {
+    @ObservedObject var store: ConsoleStore
+    @State private var isShowingForgetNodeConfirmation = false
+
     let node: NodeRecord?
 
     var body: some View {
@@ -756,6 +788,8 @@ private struct NodeDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header(node)
+                    claimPriorityCard(node)
+                    nodeRecoveryCard(node)
 
                     detailCard(AppLocalization.string("node.card.connection", fallback: "Connection"), systemImage: "antenna.radiowaves.left.and.right") {
                         LabeledContent(AppLocalization.string("node.field.sender_id", fallback: "Sender ID"), value: node.senderID)
@@ -775,46 +809,21 @@ private struct NodeDetailView: View {
 
                     detailCard(AppLocalization.string("node.card.health", fallback: "Health"), systemImage: "heart.text.square") {
                         HStack {
-                            BadgeLabel(text: node.claimState.title, tintName: node.claimState.tintName)
                             BadgeLabel(text: node.heartbeat.title, tintName: node.heartbeat.tintName)
                         }
                         LabeledContent(AppLocalization.string("node.field.last_heartbeat", fallback: "Last heartbeat"), value: node.lastSeen.formatted(date: .abbreviated, time: .shortened))
                         if let nextHeartbeatAt = node.heartbeatSnapshot?.nextHeartbeatAt {
                             LabeledContent(AppLocalization.string("node.field.next_heartbeat", fallback: "Next heartbeat"), value: nextHeartbeatAt.formatted(.relative(presentation: .named)))
                         }
-                        LabeledContent(AppLocalization.string("node.field.credit_balance", fallback: "Credit balance"), value: "\(node.creditBalance)")
+                LabeledContent(AppLocalization.string("node.field.credit_balance", fallback: "Credit balance"), value: "\(node.creditBalance)")
+                        if let reputationScore = node.reputationScore {
+                            LabeledContent(AppLocalization.string("node.field.reputation", fallback: "Reputation"), value: reputationScore.formatted(.number.precision(.fractionLength(0))))
+                        }
                         LabeledContent(AppLocalization.string("node.field.survival_status", fallback: "Survival status"), value: node.survivalStatus ?? AppLocalization.unknown)
                         LabeledContent(AppLocalization.string("node.field.node_secret", fallback: "Node secret"), value: node.nodeSecretStored ? AppLocalization.string("common.stored_in_keychain", fallback: "Stored in Keychain") : AppLocalization.string("common.not_stored", fallback: "Not stored"))
                         LabeledContent(AppLocalization.string("node.field.dispatch_queue", fallback: "Dispatch queue"), value: "\(node.dispatchCount)")
                         LabeledContent(AppLocalization.string("node.field.pending_events", fallback: "Pending events"), value: "\(node.pendingEventCount)")
                         LabeledContent(AppLocalization.string("node.field.peers", fallback: "Peers"), value: "\(node.peerCount)")
-                    }
-
-                    if node.claimURL != nil || node.claimCode != nil {
-                        detailCard(AppLocalization.string("node.card.claim", fallback: "Claim"), systemImage: "link.badge.plus") {
-                            if node.isSampleData {
-                                Text(AppLocalization.string(
-                                    "node.claim.demo_warning",
-                                    fallback: "This is seeded demo data. Its claim code is intentionally not valid. Use Connect Node to request a fresh claim URL from EvoMap."
-                                ))
-                                .foregroundStyle(.secondary)
-                            } else {
-                                if let claimCode = node.claimCode {
-                                    LabeledContent(AppLocalization.string("node.field.claim_code", fallback: "Claim code"), value: claimCode)
-                                }
-                                if let claimURL = node.claimURL, let url = URL(string: claimURL) {
-                                    Link(destination: url) {
-                                        Label(AppLocalization.string("node.action.open_claim_url", fallback: "Open Claim URL"), systemImage: "arrow.up.right.square")
-                                    }
-                                }
-                                Text(AppLocalization.string(
-                                    "node.claim.expiry_note",
-                                    fallback: "Claim links can expire. If EvoMap says the code is invalid, run Connect Node again and use the newest claim URL."
-                                ))
-                                .font(.footnote)
-                                .foregroundStyle(.tertiary)
-                            }
-                        }
                     }
 
                     if let skillStore = node.skillStoreStatus {
@@ -1026,6 +1035,106 @@ private struct NodeDetailView: View {
     }
 
     @ViewBuilder
+    private func nodeRecoveryCard(_ node: NodeRecord) -> some View {
+        if node.isSampleData == false {
+            detailCard(AppLocalization.string("node.card.recovery", fallback: "Recovery and cleanup"), systemImage: "externaldrive.badge.checkmark") {
+                Label(
+                    node.nodeSecretStored
+                        ? AppLocalization.string("node.recovery.secret_present", fallback: "Keychain auth is recoverable")
+                        : AppLocalization.string("node.recovery.secret_missing", fallback: "No local node_secret"),
+                    systemImage: node.nodeSecretStored ? "key.fill" : "key.slash"
+                )
+                .font(.headline)
+                .foregroundStyle(node.nodeSecretStored ? .green : .orange)
+
+                Text(nodeRecoveryBody(for: node))
+                    .foregroundStyle(.secondary)
+
+                if node.claimState != .claimed && node.claimURL?.nonEmpty == nil {
+                    Text(AppLocalization.string(
+                        "node.recovery.missing_claim_link",
+                        fallback: "This recovered node has no stored claim link. Use the same sender ID to refresh /a2a/hello before creating another node."
+                    ))
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                }
+
+                HStack(spacing: 10) {
+                    Button {
+                        Task {
+                            await store.refreshSelectedNodeHeartbeat()
+                        }
+                    } label: {
+                        Label(
+                            store.isRefreshingNodeHeartbeat
+                                ? AppLocalization.string("toolbar.refreshing", fallback: "Refreshing")
+                                : AppLocalization.string("node.action.verify_heartbeat", fallback: "Verify heartbeat"),
+                            systemImage: "heart.text.square"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(store.isRefreshingNodeHeartbeat || node.nodeSecretStored == false)
+
+                    if node.claimState != .claimed {
+                        Button {
+                            store.prepareNodeConnection()
+                        } label: {
+                            Label(AppLocalization.string("node.action.refresh_claim_link", fallback: "Refresh claim link"), systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    Button(role: .destructive) {
+                        isShowingForgetNodeConfirmation = true
+                    } label: {
+                        Label(AppLocalization.string("node.action.forget_node", fallback: "Forget node and secret"), systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .confirmationDialog(
+                AppLocalization.string("node.forget.confirm_title", fallback: "Forget this node?"),
+                isPresented: $isShowingForgetNodeConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button(
+                    AppLocalization.string("node.action.forget_node", fallback: "Forget node and secret"),
+                    role: .destructive
+                ) {
+                    store.forgetSelectedNodeAndSecret()
+                }
+                Button(AppLocalization.string("common.cancel", fallback: "Cancel"), role: .cancel) {}
+            } message: {
+                Text(AppLocalization.string(
+                    "node.forget.confirm_message",
+                    fallback: "This removes the local node record and its Keychain node_secret, so it will not be auto-restored on restart. It does not delete EvoMap server history."
+                ))
+            }
+        }
+    }
+
+    private func nodeRecoveryBody(for node: NodeRecord) -> String {
+        if node.nodeSecretStored == false {
+            return AppLocalization.string(
+                "node.recovery.body.no_secret",
+                fallback: "This node cannot make authenticated A2A calls from this Mac. Reconnect it or forget it locally."
+            )
+        }
+
+        if node.heartbeat == .healthy {
+            return AppLocalization.string(
+                "node.recovery.body.healthy",
+                fallback: "The latest heartbeat succeeded. Keep this node and continue using it for bounty, skill, and service work."
+            )
+        }
+
+        return AppLocalization.string(
+            "node.recovery.body.keychain",
+            fallback: "A node_secret still exists locally, so this node is worth testing before deletion. Verify heartbeat once: success means keep it; auth/not-found errors mean forget it; 429 only means rate limit."
+        )
+    }
+
+    @ViewBuilder
     private func header(_ node: NodeRecord) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(AppLocalization.phrase(node.name))
@@ -1037,9 +1146,110 @@ private struct NodeDetailView: View {
                 .font(.title3)
                 .foregroundStyle(.secondary)
             HStack {
-                BadgeLabel(text: node.claimState.title, tintName: node.claimState.tintName)
                 BadgeLabel(text: node.heartbeat.title, tintName: node.heartbeat.tintName)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func claimPriorityCard(_ node: NodeRecord) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(
+                        AppLocalization.string("node.claim.priority_title", fallback: "Step 1: claim this node"),
+                        systemImage: node.claimState == .claimed ? "checkmark.seal.fill" : "link.badge.plus"
+                    )
+                    .font(.title2.bold())
+
+                    Text(node.claimState == .claimed
+                        ? AppLocalization.string(
+                            "node.claim.priority_claimed_body",
+                            fallback: "This node is marked as claimed. The next useful step is heartbeat sync, then bounty or service work."
+                        )
+                        : AppLocalization.string(
+                            "node.claim.priority_pending_body",
+                            fallback: "Claim is the first gate. Finish it before heartbeat, bounty tasks, or paid service work."
+                        )
+                    )
+                    .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+                BadgeLabel(text: node.claimState.title, tintName: node.claimState.tintName)
+            }
+
+            if node.isSampleData {
+                Text(AppLocalization.string(
+                    "node.claim.demo_warning",
+                    fallback: "This is seeded demo data. Its claim code is intentionally not valid. Use Connect Node to request a fresh claim URL from EvoMap."
+                ))
+                .foregroundStyle(.secondary)
+            } else if node.claimState == .claimed {
+                Label(
+                    AppLocalization.string("node.claim.complete_title", fallback: "Claim complete"),
+                    systemImage: "checkmark.circle.fill"
+                )
+                .font(.headline)
+                .foregroundStyle(.green)
+            } else {
+                if let claimCode = node.claimCode?.nonEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(AppLocalization.string("node.field.claim_code", fallback: "Claim code"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(claimCode)
+                            .font(.system(.title3, design: .monospaced).weight(.semibold))
+                            .textSelection(.enabled)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    if let claimURL = node.claimURL?.nonEmpty, let url = URL(string: claimURL) {
+                        Link(destination: url) {
+                            Label(AppLocalization.string("node.action.open_claim_url", fallback: "Open Claim URL"), systemImage: "arrow.up.right.square")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    } else {
+                        Text(AppLocalization.string(
+                            "node.claim.missing_link_note",
+                            fallback: "No active claim link is stored locally. Run Connect Node again only if EvoMap rejected the latest code."
+                        ))
+                        .foregroundStyle(.secondary)
+                    }
+
+                    Button {
+                        store.markSelectedNodeClaimed()
+                    } label: {
+                        Label(AppLocalization.string("node.action.mark_claimed", fallback: "I completed the browser claim"), systemImage: "checkmark.seal")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Text(AppLocalization.string(
+                    "node.claim.expiry_note",
+                    fallback: "Claim links can expire. If EvoMap says the code is invalid, run Connect Node again and use the newest claim URL."
+                ))
+                .font(.footnote)
+                .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [
+                    node.claimState == .claimed ? Color.green.opacity(0.12) : Color.orange.opacity(0.18),
+                    Color.yellow.opacity(0.08),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(node.claimState == .claimed ? Color.green.opacity(0.28) : Color.orange.opacity(0.38), lineWidth: 1)
         }
     }
 
@@ -1109,44 +1319,14 @@ private struct CreditsListView: View {
         List {
             Section(AppLocalization.string("credits.section.sprint", fallback: "Sprint")) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label(AppLocalization.string("credits.fast_path.title", fallback: "Fast credits path"), systemImage: "bolt.circle")
+                    Label(AppLocalization.string("credits.fast_path.title", fallback: "Credits path"), systemImage: "bolt.circle")
                         .font(.headline)
                     Text(AppLocalization.phrase(store.creditSprintStatusLine))
                         .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
-
-                LabeledContent(
-                    AppLocalization.string("credits.label.official_account_balance", fallback: "Official account balance"),
-                    value: store.officialAccountBalanceDisplayValue
-                )
-                LabeledContent(
-                    AppLocalization.string("credits.label.node_returned_balance", fallback: "Node-reported balance"),
-                    value: AppLocalization.string("credits.unit.count", fallback: "%d credits", store.totalNodeCreditBalance)
-                )
-                LabeledContent(
-                    AppLocalization.string("credits.label.premium_target", fallback: "Premium target"),
-                    value: AppLocalization.string("credits.unit.count", fallback: "%d credits", store.premiumCreditTarget)
-                )
-                LabeledContent(
-                    AppLocalization.string("credits.label.free_daily_cap", fallback: "Free fetch reward cap"),
-                    value: AppLocalization.string("credits.unit.count", fallback: "%d credits", store.freeDailyEarningCap)
-                )
             }
-
-            Section(AppLocalization.string("credits.section.readiness", fallback: "Readiness")) {
-                ForEach(store.creditSprintSteps) { step in
-                    CreditSprintStepRow(step: step)
-                }
-            }
-
             Section(AppLocalization.string("credits.section.open", fallback: "Open")) {
-                Button {
-                    store.performCreditSprintPrimaryAction()
-                } label: {
-                    Label(store.creditSprintPrimaryTitle, systemImage: "arrow.up.right.square")
-                }
-
                 Link(destination: store.evoMapBountiesURL) {
                     Label(AppLocalization.string("credits.open.bounty_board", fallback: "Bounty board"), systemImage: "target")
                 }
@@ -1192,51 +1372,44 @@ private struct CreditsDetailView: View {
         ]
     }
 
-    private var answerQuestionSteps: [String] {
-        [
-            AppLocalization.string(
-                "credits.answer.step.open",
-                fallback: "Discover bounty tasks from heartbeat available_tasks or /a2a/task/list?min_bounty=1."
-            ),
-            AppLocalization.string(
-                "credits.answer.step.claim",
-                fallback: "Claim the task with /a2a/task/claim after confirming you can solve it."
-            ),
-            AppLocalization.string(
-                "credits.answer.step.prepare",
-                fallback: "Solve the question and prepare a verifiable answer; use /a2a/fetch first if an existing Capsule can help."
-            ),
-            AppLocalization.string(
-                "credits.answer.step.submit",
-                fallback: "Publish your solution Capsule with POST /a2a/publish."
-            ),
-            AppLocalization.string(
-                "credits.answer.step.settle",
-                fallback: "Complete the task with POST /a2a/task/complete; after user acceptance, the bounty is credited automatically."
-            ),
-        ]
-    }
-
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text(AppLocalization.string("credits.detail.title", fallback: "Credits Sprint"))
+            VStack(alignment: .leading, spacing: 18) {
+                Text(AppLocalization.string("credits.detail.title", fallback: "Credits"))
                     .font(.largeTitle.bold())
                 Text(AppLocalization.string(
                     "credits.detail.body",
-                    fallback: "Use this screen as the operating order: connect the node, claim it, work bounty-backed questions, then publish the Japanese learning service when the cleaned data is ready."
+                    fallback: "This page starts after the Node page. Use it only to read balances, work bounty tasks, draft paid Japanese-learning services, and decide when to upgrade."
                 ))
                     .font(.title3)
                     .foregroundStyle(.secondary)
 
-                detailCard(AppLocalization.string("credits.card.balance_target", fallback: "Balance target"), systemImage: "gauge.with.dots.needle.50percent") {
-                    LabeledContent(
-                        AppLocalization.string("credits.label.official_account_balance", fallback: "Official account balance"),
-                        value: store.officialAccountBalanceDisplayValue
-                    )
-                    Text(store.officialAccountBalanceDetailLine)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                detailCard(AppLocalization.string("credits.card.balance_target", fallback: "Balance and target"), systemImage: "gauge.with.dots.needle.50percent") {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                        CreditMetricBlock(
+                            title: AppLocalization.string("credits.label.official_account_balance", fallback: "Official account balance"),
+                            value: store.officialAccountBalanceDisplayValue,
+                            detail: store.officialAccountBalanceDetailLine
+                        )
+                        CreditMetricBlock(
+                            title: AppLocalization.string("credits.label.node_returned_balance", fallback: "Node-reported balance"),
+                            value: AppLocalization.string("credits.unit.count", fallback: "%d credits", store.totalNodeCreditBalance),
+                            detail: AppLocalization.string("credits.number.node_balance.value", fallback: "Only real connected nodes, never sample data")
+                        )
+                        CreditMetricBlock(
+                            title: AppLocalization.string("credits.label.public_premium_target", fallback: "Public Premium target"),
+                            value: AppLocalization.string("credits.unit.count", fallback: "%d credits", store.premiumCreditTarget),
+                            detail: AppLocalization.string("credits.number.premium_target.value", fallback: "A goal line, not your current credits")
+                        )
+                        CreditMetricBlock(
+                            title: AppLocalization.string("credits.label.remaining_gap", fallback: "Remaining gap"),
+                            value: store.premiumCreditGapDisplayValue,
+                            detail: AppLocalization.string("credits.balance.gap_note", fallback: "This is a planning gap. EvoMap remains the source of truth.")
+                        )
+                    }
+
+                    ProgressView(value: store.creditProgressFraction)
+
                     HStack {
                         Button {
                             Task {
@@ -1253,6 +1426,7 @@ private struct CreditsDetailView: View {
                                 .controlSize(.small)
                         }
                     }
+
                     if let message = store.accountBalanceMessage {
                         Text(message)
                             .font(.footnote)
@@ -1263,188 +1437,50 @@ private struct CreditsDetailView: View {
                             .font(.footnote)
                             .foregroundStyle(.red)
                     }
-                    LabeledContent(
-                        AppLocalization.string("credits.label.node_returned_balance", fallback: "Node-reported balance"),
-                        value: AppLocalization.string("credits.unit.count", fallback: "%d credits", store.totalNodeCreditBalance)
-                    )
-                    LabeledContent(
-                        AppLocalization.string("credits.label.public_premium_target", fallback: "Public Premium target"),
-                        value: AppLocalization.string("credits.unit.count", fallback: "%d credits", store.premiumCreditTarget)
-                    )
-                    LabeledContent(
-                        AppLocalization.string("credits.label.remaining_gap", fallback: "Remaining gap"),
-                        value: store.premiumCreditGapDisplayValue
-                    )
-                    ProgressView(value: store.creditProgressFraction)
+                }
+
+                detailCard(AppLocalization.string("credits.card.today_queue", fallback: "Credits workflow"), systemImage: "checklist") {
                     Text(AppLocalization.string(
-                        "credits.balance.note",
-                        fallback: "Sample nodes are not counted. The app only summarizes balances returned by real connected nodes; EvoMap account balance remains the source of truth."
+                        "credits.workflow.note",
+                        fallback: "No node setup actions live here. If a prerequisite is missing, finish it in Nodes first, then return here."
                     ))
-                        .font(.footnote)
-                        .foregroundStyle(.tertiary)
-                }
+                    .foregroundStyle(.secondary)
 
-                detailCard(AppLocalization.string("credits.card.number_meanings", fallback: "What the numbers mean"), systemImage: "number.circle") {
-                    LabeledContent(
-                        AppLocalization.string("credits.number.current_balance", fallback: "Your current balance"),
-                        value: AppLocalization.string("credits.number.current_balance.value", fallback: "Official account page or `/account/balance`")
-                    )
-                    LabeledContent(
-                        AppLocalization.string("credits.number.node_balance", fallback: "Node-reported balance"),
-                        value: AppLocalization.string("credits.number.node_balance.value", fallback: "Only real connected nodes, never sample data")
-                    )
-                    LabeledContent(
-                        AppLocalization.string("credits.number.premium_target", fallback: "Premium target"),
-                        value: AppLocalization.string("credits.number.premium_target.value", fallback: "A goal line, not your current credits")
-                    )
-                    Text(AppLocalization.string(
-                        "credits.number.note",
-                        fallback: "If the app shows a large target while your account has fewer credits, read it as the gap to unlock the next plan. Credits still settle through EvoMap, not through this app."
-                    ))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                detailCard(AppLocalization.string("credits.card.fast_actions", fallback: "Fast actions"), systemImage: "bolt.circle") {
-                    HStack {
-                        Button {
-                            store.prepareNodeConnection()
-                        } label: {
-                            Label(AppLocalization.string("primary.connect_node", fallback: "Connect Node"), systemImage: "server.rack")
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        Button {
-                            store.performCreditSprintPrimaryAction()
-                        } label: {
-                            Label(store.creditSprintPrimaryTitle, systemImage: "arrow.up.right.square")
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    HStack {
-                        Button {
-                            store.openURL(store.evoMapBountiesURL)
-                        } label: {
-                            Label(AppLocalization.string("primary.open_bounties", fallback: "Open Bounties"), systemImage: "target")
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button {
-                            store.prepareJapaneseLearningServiceComposer()
-                        } label: {
-                            Label(AppLocalization.string("credits.action.draft_japanese_service", fallback: "Draft Japanese Service"), systemImage: "shippingbox")
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    if let claimURL = store.bestCreditNodeClaimURL {
-                        Link(destination: claimURL) {
-                            Label(AppLocalization.string("credits.action.open_selected_claim", fallback: "Open selected node claim URL"), systemImage: "link.badge.plus")
-                        }
-                    } else {
-                        Text(AppLocalization.string("credits.no_claim_url", fallback: "No claim URL is available yet. Run the node handshake first."))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                detailCard(AppLocalization.string("credits.card.today_queue", fallback: "Today queue"), systemImage: "checklist") {
                     ForEach(store.creditSprintSteps) { step in
                         CreditSprintStepRow(step: step)
                     }
                 }
 
                 detailCard(AppLocalization.string("credits.card.bounty_workbench", fallback: "Bounty task workbench"), systemImage: "target") {
-                    if let blocker = store.bountyTaskPrerequisiteBlocker {
-                        Text(blocker)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text(AppLocalization.string(
-                            "credits.bounty.note",
-                            fallback: "This calls /a2a/task/list?min_bounty=1 and /a2a/task/claim with the selected node_secret."
-                        ))
-                            .foregroundStyle(.secondary)
+                    Text(AppLocalization.string(
+                        "credits.bounty.moved_note",
+                        fallback: "Bounty volume is high, so tracking moved into the dedicated Bounties page. Keep Credits as the balance and workflow checkpoint."
+                    ))
+                    .foregroundStyle(.secondary)
+
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                        CreditMetricBlock(
+                            title: AppLocalization.string("bounties.metric.loaded", fallback: "Loaded bounties"),
+                            value: "\(store.bountyTasks.count)",
+                            detail: store.bountyTaskLoadedCountLine
+                        )
+                        CreditMetricBlock(
+                            title: AppLocalization.string("bounties.metric.following", fallback: "Following"),
+                            value: "\(store.followedBountyTaskIDs.count)",
+                            detail: AppLocalization.string("bounties.metric.following.detail", fallback: "Local watchlist saved on this Mac")
+                        )
                     }
 
                     HStack {
                         Button {
-                            Task {
-                                await store.refreshBountyTasks()
-                            }
+                            store.setSection(.bounties)
                         } label: {
-                            Label(AppLocalization.string("credits.action.refresh_bounties", fallback: "Refresh bounties"), systemImage: "arrow.clockwise")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(store.isLoadingBountyTasks || store.bountyTaskPrerequisiteBlocker != nil)
-
-                        Button {
-                            Task {
-                                await store.claimBountyTask(store.selectedBountyTask)
-                            }
-                        } label: {
-                            Label(AppLocalization.string("credits.action.claim_selected_bounty", fallback: "Claim selected bounty"), systemImage: "hand.raised")
+                            Label(AppLocalization.string("credits.action.open_bounty_tracker", fallback: "Open Bounty Tracker"), systemImage: "target")
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(!store.canClaimBountyTask(store.selectedBountyTask))
 
-                        if store.isLoadingBountyTasks || store.activeBountyClaimTaskID != nil {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                    }
-
-                    if let message = store.bountyTaskMessage {
-                        Text(message)
-                            .font(.footnote)
-                            .foregroundStyle(.green)
-                    }
-                    if let error = store.bountyTaskErrorMessage {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
-
-                    if store.bountyTasks.isEmpty {
-                        Text(AppLocalization.string(
-                            "credits.bounty.empty",
-                            fallback: "No bounty tasks loaded yet. Refresh after the node is connected and claimed."
-                        ))
-                            .font(.footnote)
-                            .foregroundStyle(.tertiary)
-                    } else {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(store.bountyTasks) { task in
-                                Button {
-                                    store.selectedBountyTaskID = task.id
-                                } label: {
-                                    BountyTaskRow(
-                                        task: task,
-                                        isSelected: store.selectedBountyTaskID == task.id,
-                                        isClaiming: store.activeBountyClaimTaskID == task.id
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
-
-                detailCard(AppLocalization.string("credits.card.answer_questions", fallback: "Answer questions for credits"), systemImage: "questionmark.bubble") {
-                    Text(AppLocalization.string(
-                        "credits.answer.note",
-                        fallback: "Credits are awarded by EvoMap's official task settlement, not by this local management app."
-                    ))
-                        .foregroundStyle(.secondary)
-
-                    ForEach(Array(answerQuestionSteps.enumerated()), id: \.offset) { index, step in
-                        Label {
-                            Text(step)
-                        } icon: {
-                            Text("\(index + 1)")
-                                .font(.caption.bold())
-                                .foregroundStyle(.white)
-                                .frame(width: 18, height: 18)
-                                .background(Circle().fill(Color.accentColor))
+                        Link(destination: store.evoMapBountiesURL) {
+                            Label(AppLocalization.string("credits.open.bounty_board", fallback: "Bounty board"), systemImage: "safari")
                         }
                     }
                 }
@@ -1463,6 +1499,13 @@ private struct CreditsDetailView: View {
                         }
                         .padding(.vertical, 4)
                     }
+                    Button {
+                        store.prepareJapaneseLearningServiceComposer()
+                    } label: {
+                        Label(AppLocalization.string("credits.action.draft_japanese_service", fallback: "Draft Japanese Service"), systemImage: "shippingbox")
+                    }
+                    .buttonStyle(.bordered)
+
                     Text(AppLocalization.string(
                         "credits.service.note",
                         fallback: "Keep the first service narrow. The goal is repeatable paid calls, not a broad demo that is hard to evaluate."
@@ -1471,7 +1514,7 @@ private struct CreditsDetailView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                detailCard(AppLocalization.string("credits.card.paid_api_gate", fallback: "Paid API gate"), systemImage: "key") {
+                detailCard(AppLocalization.string("credits.card.paid_api_gate", fallback: "Upgrade and API key"), systemImage: "key") {
                     LabeledContent(
                         AppLocalization.string("credits.label.kg_api_key", fallback: "KG API key"),
                         value: ConsoleAppSettings.kgAPIKey.nonEmpty == nil
@@ -1498,37 +1541,581 @@ private struct CreditsDetailView: View {
     }
 }
 
+private struct BountyTasksListView: View {
+    @ObservedObject var store: ConsoleStore
+
+    var body: some View {
+        List {
+            Section(AppLocalization.string("bounties.section.tracker", fallback: "Tracker")) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(AppLocalization.string("bounties.title", fallback: "Bounty Tracker"), systemImage: "target")
+                        .font(.headline)
+                    Text(store.bountyTaskLoadedCountLine)
+                        .foregroundStyle(.secondary)
+                    Text(store.claimedBountyTaskCountLine)
+                        .foregroundStyle(.secondary)
+                    if let error = store.bountyTaskErrorMessage {
+                        Text(error)
+                            .foregroundStyle(.red)
+                    }
+                }
+                .padding(.vertical, 4)
+
+                Button {
+                    Task {
+                        await store.refreshBountyTasks()
+                    }
+                } label: {
+                    Label(AppLocalization.string("credits.action.refresh_bounties", fallback: "Refresh bounties"), systemImage: "arrow.clockwise")
+                }
+                .disabled(store.isLoadingBountyTasks || store.selectedOrFirstCreditNode == nil)
+
+                Button {
+                    Task {
+                        await store.refreshClaimedBountyTasks()
+                    }
+                } label: {
+                    Label(
+                        store.isLoadingClaimedBountyTasks
+                            ? AppLocalization.string("bounties.action.refreshing_claimed", fallback: "Refreshing claimed tasks")
+                            : AppLocalization.string("bounties.action.refresh_claimed", fallback: "Refresh my claimed tasks"),
+                        systemImage: "tray.and.arrow.down"
+                    )
+                }
+                .disabled(store.isLoadingClaimedBountyTasks || store.selectedOrFirstCreditNode == nil)
+            }
+
+            if store.claimedBountyDisplayTasks.isEmpty == false {
+                Section(AppLocalization.string("bounties.section.claimed", fallback: "My claimed tasks")) {
+                    ForEach(store.claimedBountyDisplayTasks) { task in
+                        bountyTaskButton(task)
+                    }
+                }
+            }
+
+            if store.followedBountyTasks.isEmpty == false {
+                Section(AppLocalization.string("bounties.section.following", fallback: "Following")) {
+                    ForEach(store.followedBountyTasks) { task in
+                        bountyTaskButton(task)
+                    }
+                }
+            }
+
+            Section(AppLocalization.string("bounties.section.all", fallback: "All loaded tasks")) {
+                if let blocker = store.bountyTaskPrerequisiteBlocker {
+                    Text(blocker)
+                        .foregroundStyle(.secondary)
+                }
+
+                if store.filteredBountyTasks.isEmpty {
+                    Text(AppLocalization.string("credits.bounty.empty", fallback: "No bounty tasks loaded yet. Refresh after the node is connected and claimed."))
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(store.filteredBountyTasks) { task in
+                        bountyTaskButton(task)
+                    }
+                }
+
+                if store.hasMoreBountyTasks {
+                    Button {
+                        Task {
+                            await store.loadMoreBountyTasks()
+                        }
+                    } label: {
+                        Label(
+                            store.isLoadingBountyTasks
+                                ? AppLocalization.string("bounties.action.loading_more", fallback: "Loading more")
+                                : AppLocalization.string("bounties.action.load_more", fallback: "Load more"),
+                            systemImage: "plus.circle"
+                        )
+                    }
+                    .disabled(store.isLoadingBountyTasks)
+                }
+            }
+        }
+        .navigationTitle(AppLocalization.string("section.bounties", fallback: "Bounties"))
+        .task {
+            if store.bountyTasks.isEmpty {
+                await store.refreshBountyTasks()
+            } else if store.claimedBountyTasks.isEmpty {
+                await store.refreshClaimedBountyTasks()
+            }
+        }
+    }
+
+    private func bountyTaskButton(_ task: EvoMapBountyTask) -> some View {
+        Button {
+            store.selectedBountyTaskID = task.id
+        } label: {
+            BountyTaskRow(
+                task: task,
+                isSelected: store.selectedBountyTaskID == task.id,
+                isClaiming: store.activeBountyClaimTaskID == task.id,
+                isFollowed: store.isFollowingBountyTask(task),
+                isClaimed: store.isClaimedBountyTask(task),
+                submissionStatus: store.claimedSubmissionStatus(for: task),
+                requiredReputation: store.bountyRequiredReputation(for: task),
+                nodeReputation: store.selectedNodeReputationScore
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct BountyTaskDetailView: View {
+    @ObservedObject var store: ConsoleStore
+
+    var body: some View {
+        if let task = store.selectedBountyTask {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(AppLocalization.bountyText(task.title))
+                            .font(.largeTitle.bold())
+                        if AppLocalization.hasBountyTranslation(for: task.title) {
+                            Text(AppLocalization.string("bounties.raw_title", fallback: "Original: %@", task.title))
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                        HStack {
+                            if let credits = task.displayCredits {
+                                BadgeLabel(text: AppLocalization.string("credits.unit.count", fallback: "%d credits", credits), tintName: "green")
+                            }
+                            if store.selectedBountyTaskIsFollowed {
+                                BadgeLabel(text: AppLocalization.string("bounties.badge.following", fallback: "Following"), tintName: "blue")
+                            }
+                            BadgeLabel(text: AppLocalization.bountyTerm(task.status) ?? AppLocalization.unknown, tintName: "secondary")
+                        }
+                    }
+
+                    detailCard(AppLocalization.string("bounties.card.actions", fallback: "Actions"), systemImage: "hand.point.up.left") {
+                        if let blocker = store.bountyTaskPrerequisiteBlocker {
+                            Text(blocker)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text(AppLocalization.string(
+                                "bounties.actions.note",
+                                fallback: "Follow high-signal tasks first. Claim only when you can answer cleanly; failed claims can still reveal reputation requirements."
+                            ))
+                            .foregroundStyle(.secondary)
+                        }
+
+                        HStack {
+                            Button {
+                                store.toggleSelectedBountyTaskFollow()
+                            } label: {
+                                Label(
+                                    store.selectedBountyTaskIsFollowed
+                                        ? AppLocalization.string("bounties.action.unfollow", fallback: "Remove follow")
+                                        : AppLocalization.string("bounties.action.follow", fallback: "Follow task"),
+                                    systemImage: store.selectedBountyTaskIsFollowed ? "bookmark.slash" : "bookmark"
+                                )
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button {
+                                Task {
+                                    await store.claimBountyTask(task)
+                                }
+                            } label: {
+                                Label(
+                                    store.selectedBountyTaskIsClaimed
+                                        ? AppLocalization.string("bounties.action.claimed", fallback: "Claimed")
+                                        : AppLocalization.string("credits.action.claim_selected_bounty", fallback: "Claim selected bounty"),
+                                    systemImage: store.selectedBountyTaskIsClaimed ? "checkmark.circle" : "hand.raised"
+                                )
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(store.selectedBountyTaskIsClaimed || !store.canClaimBountyTask(task))
+
+                            Link(destination: store.evoMapBountiesURL) {
+                                Label(AppLocalization.string("credits.open.bounty_board", fallback: "Bounty board"), systemImage: "safari")
+                            }
+
+                            Link(destination: store.evoMapReputationDocsURL) {
+                                Label(AppLocalization.string("bounties.open.reputation_docs", fallback: "Reputation rules"), systemImage: "book")
+                            }
+                        }
+
+                        if let contextLine = store.selectedBountyClaimContextLine {
+                            Label(contextLine, systemImage: "info.circle")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                        if let eligibilityLine = store.selectedBountyEligibilityLine {
+                            Label(
+                                eligibilityLine,
+                                systemImage: store.canSelectedNodeClaimBounty(task) == false ? "exclamationmark.triangle" : "checkmark.shield"
+                            )
+                            .font(.footnote)
+                            .foregroundStyle(store.canSelectedNodeClaimBounty(task) == false ? .orange : .secondary)
+                        }
+                        if let message = store.bountyTaskMessage {
+                            Text(message)
+                                .font(.footnote)
+                                .foregroundStyle(.green)
+                        }
+                        if let error = store.bountyTaskErrorMessage {
+                            Text(error)
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
+                    }
+
+                    detailCard(AppLocalization.string("bounties.card.content", fallback: "Task content"), systemImage: "doc.text.magnifyingglass") {
+                        if let summary = task.summary?.nonEmpty {
+                            Text(AppLocalization.bountyText(summary))
+                                .foregroundStyle(.secondary)
+                            if AppLocalization.hasBountyTranslation(for: summary) {
+                                Text(AppLocalization.string("bounties.raw_summary", fallback: "Original summary: %@", summary))
+                                    .font(.footnote)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        } else {
+                            Text(AppLocalization.string("bounties.no_summary", fallback: "No summary returned by the public bounty API."))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    detailCard(AppLocalization.string("bounties.card.identity", fallback: "IDs and metadata"), systemImage: "number.square") {
+                        LabeledContent(AppLocalization.string("bounties.field.task_id", fallback: "Task ID"), value: task.claimableTaskID ?? AppLocalization.string("bounties.value.resolve_before_claim", fallback: "Resolve before claim"))
+                        LabeledContent(AppLocalization.string("bounties.field.bounty_id", fallback: "Bounty ID"), value: task.bountyID ?? AppLocalization.unknown)
+                        LabeledContent(AppLocalization.string("bounties.field.question_id", fallback: "Question ID"), value: task.questionID ?? AppLocalization.unknown)
+                        LabeledContent(AppLocalization.string("bounties.field.kind", fallback: "Kind"), value: AppLocalization.bountyTerm(task.kind) ?? AppLocalization.unknown)
+                        LabeledContent(AppLocalization.string("bounties.field.status", fallback: "Status"), value: AppLocalization.bountyTerm(task.status) ?? AppLocalization.unknown)
+                        LabeledContent(AppLocalization.string("bounties.field.deadline", fallback: "Deadline"), value: task.deadline ?? AppLocalization.unknown)
+                        LabeledContent(
+                            AppLocalization.string("bounties.field.required_reputation", fallback: "Required reputation"),
+                            value: store.bountyRequiredReputation(for: task).map { ">= \($0)" } ?? AppLocalization.unknown
+                        )
+                        LabeledContent(
+                            AppLocalization.string("bounties.field.node_reputation", fallback: "Node reputation"),
+                            value: store.selectedNodeReputationScore.map { $0.formatted(.number.precision(.fractionLength(0))) } ?? AppLocalization.unknown
+                        )
+                    }
+
+                    detailCard(AppLocalization.string("bounties.card.followup", fallback: "Follow-up flow"), systemImage: "checklist") {
+                        BountyFollowStepRow(
+                            systemImage: "bookmark",
+                            title: AppLocalization.string("bounties.follow.step.watch.title", fallback: "1. Follow"),
+                            detail: AppLocalization.string("bounties.follow.step.watch.detail", fallback: "Save promising tasks locally so they do not disappear in a large list."),
+                            isComplete: store.selectedBountyTaskIsFollowed
+                        )
+                        BountyFollowStepRow(
+                            systemImage: "hand.raised",
+                            title: AppLocalization.string("bounties.follow.step.claim.title", fallback: "2. Claim"),
+                            detail: AppLocalization.string("bounties.follow.step.claim.detail", fallback: "Resolve task_id from bounty_id, then claim with the selected node_id."),
+                            isComplete: store.selectedBountyTaskIsClaimed
+                        )
+                        BountyFollowStepRow(
+                            systemImage: "doc.badge.plus",
+                            title: AppLocalization.string("bounties.follow.step.answer.title", fallback: "3. Answer"),
+                            detail: AppLocalization.string("bounties.follow.step.answer.detail", fallback: "Prepare a verifiable answer Capsule and complete the task through EvoMap settlement."),
+                            isComplete: store.bountyAnswerDraft.publishedAssetID != nil
+                        )
+                    }
+
+                    detailCard(AppLocalization.string("bounties.card.delivery", fallback: "Implementation and submission"), systemImage: "hammer") {
+                        Label(store.selectedBountyClaimedStatusLine, systemImage: store.selectedBountyTaskIsClaimed ? "checkmark.seal" : "exclamationmark.triangle")
+                            .foregroundStyle(store.selectedBountyTaskIsClaimed ? Color.secondary : Color.orange)
+                            .textSelection(.enabled)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(AppLocalization.string("bounties.executor.title", fallback: "Execute task"))
+                                .font(.headline)
+                            Picker(
+                                AppLocalization.string("bounties.executor.provider", fallback: "Executor"),
+                                selection: $store.bountyExecutionProvider
+                            ) {
+                                ForEach(BountyExecutionProvider.allCases) { provider in
+                                    Text(provider.title).tag(provider)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+
+                            Text(store.bountyExecutionProvider.note)
+                                .foregroundStyle(.secondary)
+
+                            Text(store.selectedBountyExecutionCommand)
+                                .font(.system(.caption, design: .monospaced))
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .textSelection(.enabled)
+
+                            HStack {
+                                Button {
+                                    store.copySelectedBountyExecutionBrief()
+                                } label: {
+                                    Label(AppLocalization.string("bounties.executor.copy_brief", fallback: "Copy execution brief"), systemImage: "doc.on.doc")
+                                }
+                                .buttonStyle(.bordered)
+
+                                Button {
+                                    store.copySelectedBountyExecutionCommand()
+                                } label: {
+                                    Label(AppLocalization.string("bounties.executor.copy_command", fallback: "Copy CLI command"), systemImage: "terminal")
+                                }
+                                .buttonStyle(.bordered)
+                            }
+
+                            Divider()
+
+                            Text(AppLocalization.string("bounties.patch_courier.title", fallback: "Patch Courier mail handoff"))
+                                .font(.subheadline.weight(.semibold))
+                            Text(AppLocalization.string(
+                                "bounties.patch_courier.note",
+                                fallback: "Send the claimed task to Patch Courier's relay mailbox. Patch Courier runs Codex in its EvoMap Tasks workspace and replies with a structured result email."
+                            ))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+
+                            HStack {
+                                Button {
+                                    store.sendSelectedBountyToPatchCourier()
+                                } label: {
+                                    Label(AppLocalization.string("bounties.patch_courier.send_execute", fallback: "Send to Patch Courier"), systemImage: "envelope.badge")
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(!store.patchCourierRelayEmailIsConfigured)
+
+                                Button {
+                                    store.querySelectedBountyPatchCourierStatus()
+                                } label: {
+                                    Label(AppLocalization.string("bounties.patch_courier.query_status", fallback: "Query status by email"), systemImage: "envelope.open")
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(!store.patchCourierRelayEmailIsConfigured)
+
+                                Button {
+                                    store.copySelectedBountyPatchCourierExecuteEmail()
+                                } label: {
+                                    Label(AppLocalization.string("bounties.patch_courier.copy_execute", fallback: "Copy email"), systemImage: "doc.on.clipboard")
+                                }
+                                .buttonStyle(.bordered)
+                            }
+
+                            if !store.patchCourierRelayEmailIsConfigured {
+                                Text(AppLocalization.string(
+                                    "bounties.patch_courier.configure_hint",
+                                    fallback: "Configure the Patch Courier relay mailbox in Settings before using mail handoff."
+                                ))
+                                .font(.footnote)
+                                .foregroundStyle(.orange)
+                            }
+
+                            if let message = store.bountyExecutionMessage {
+                                Text(message)
+                                    .font(.footnote)
+                                    .foregroundStyle(.green)
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(AppLocalization.string("bounties.delivery.implementation_notes", fallback: "Implementation notes"))
+                                .font(.headline)
+                            TextEditor(text: Binding(
+                                get: { store.bountyAnswerDraft.implementationNotes },
+                                set: { store.bountyAnswerDraft.implementationNotes = $0 }
+                            ))
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minHeight: 90)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.18)))
+                        }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(AppLocalization.string("bounties.delivery.final_answer", fallback: "Final answer"))
+                                .font(.headline)
+                            TextEditor(text: Binding(
+                                get: { store.bountyAnswerDraft.answerText },
+                                set: { store.bountyAnswerDraft.answerText = $0 }
+                            ))
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minHeight: 220)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.18)))
+                        }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(AppLocalization.string("bounties.delivery.verification_notes", fallback: "Verification notes"))
+                                .font(.headline)
+                            TextEditor(text: Binding(
+                                get: { store.bountyAnswerDraft.verificationNotes },
+                                set: { store.bountyAnswerDraft.verificationNotes = $0 }
+                            ))
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minHeight: 90)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.18)))
+                        }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(AppLocalization.string("bounties.delivery.preview", fallback: "Final submission structure"))
+                                .font(.headline)
+                            Text(store.selectedBountySubmissionPreview)
+                                .font(.system(.caption, design: .monospaced))
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .textSelection(.enabled)
+                        }
+
+                        HStack {
+                            Button {
+                                store.generateSelectedBountySubmissionStructure()
+                            } label: {
+                                Label(AppLocalization.string("bounties.action.generate_submission", fallback: "Generate submission structure"), systemImage: "wand.and.stars")
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button {
+                                store.saveSelectedBountyAnswerDraft()
+                            } label: {
+                                Label(AppLocalization.string("bounties.action.save_draft", fallback: "Save draft"), systemImage: "tray.and.arrow.down")
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button {
+                                Task {
+                                    await store.submitSelectedBountyAnswer()
+                                }
+                            } label: {
+                                Label(
+                                    store.isSubmittingBountyAnswer
+                                        ? AppLocalization.string("bounties.action.submitting", fallback: "Publishing")
+                                        : AppLocalization.string("bounties.action.publish_complete", fallback: "Publish Capsule and complete"),
+                                    systemImage: "paperplane.fill"
+                                )
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!store.canSubmitSelectedBountyAnswer)
+                        }
+
+                        if let message = store.bountyAnswerDraftMessage {
+                            Text(message)
+                                .font(.footnote)
+                                .foregroundStyle(.green)
+                        }
+                        if let error = store.bountyAnswerDraftErrorMessage {
+                            Text(error)
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .navigationTitle(AppLocalization.string("section.bounties", fallback: "Bounties"))
+        } else {
+            ContentUnavailableView(
+                AppLocalization.string("bounties.empty.title", fallback: "Select a bounty"),
+                systemImage: "target",
+                description: Text(AppLocalization.string("bounties.empty.description", fallback: "Refresh the bounty list and choose one task to inspect, follow, or claim."))
+            )
+        }
+    }
+}
+
+private struct BountyFollowStepRow: View {
+    let systemImage: String
+    let title: String
+    let detail: String
+    let isComplete: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: isComplete ? "checkmark.circle.fill" : systemImage)
+                .foregroundStyle(isComplete ? .green : .blue)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                Text(detail)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct BountyInspectorView: View {
+    @ObservedObject var store: ConsoleStore
+
+    var body: some View {
+        List {
+            Section(AppLocalization.string("bounties.section.tracker", fallback: "Tracker")) {
+                LabeledContent(AppLocalization.string("bounties.inspector.loaded", fallback: "Loaded"), value: "\(store.bountyTasks.count)")
+                LabeledContent(AppLocalization.string("bounties.inspector.total", fallback: "Total"), value: store.bountyTaskTotalCount.map { $0.formatted(.number) } ?? AppLocalization.unknown)
+                LabeledContent(AppLocalization.string("bounties.inspector.following", fallback: "Following"), value: "\(store.followedBountyTaskIDs.count)")
+                LabeledContent(AppLocalization.string("bounties.inspector.claimed", fallback: "Claimed"), value: "\(store.claimedBountyTasks.count)")
+                LabeledContent(AppLocalization.string("bounties.inspector.filtered", fallback: "Filtered"), value: "\(store.filteredBountyTasks.count)")
+            }
+
+            Section(AppLocalization.string("credits.section.selected_node", fallback: "Prerequisites")) {
+                LabeledContent(AppLocalization.string("credits.inspector.claimed_nodes", fallback: "Claimed nodes"), value: "\(store.claimedNodeCount)")
+                LabeledContent(AppLocalization.string("credits.inspector.keychain_node_secrets", fallback: "Keychain node secrets"), value: "\(store.storedNodeSecretCount)")
+                LabeledContent(AppLocalization.string("bounties.inspector.selected_node", fallback: "Selected node"), value: store.selectedOrFirstCreditNode?.senderID ?? AppLocalization.chooseConnectedNode)
+                LabeledContent(
+                    AppLocalization.string("bounties.field.node_reputation", fallback: "Node reputation"),
+                    value: store.selectedNodeReputationScore.map { $0.formatted(.number.precision(.fractionLength(0))) } ?? AppLocalization.unknown
+                )
+            }
+
+            if let task = store.selectedBountyTask {
+                Section(AppLocalization.string("bounties.section.selected", fallback: "Selected")) {
+                    LabeledContent(AppLocalization.string("bounties.field.bounty_id", fallback: "Bounty ID"), value: task.bountyID ?? AppLocalization.unknown)
+                    LabeledContent(AppLocalization.string("bounties.field.question_id", fallback: "Question ID"), value: task.questionID ?? AppLocalization.unknown)
+                    LabeledContent(AppLocalization.string("bounties.field.reward", fallback: "Reward"), value: task.displayCredits.map { AppLocalization.string("credits.unit.count", fallback: "%d credits", $0) } ?? AppLocalization.unknown)
+                    LabeledContent(AppLocalization.string("bounties.field.submission", fallback: "Submission"), value: store.selectedClaimedBountyTask?.mySubmissionID ?? AppLocalization.unknown)
+                }
+            }
+        }
+    }
+}
+
 private struct CreditsInspectorView: View {
     @ObservedObject var store: ConsoleStore
 
     var body: some View {
         List {
-            Section(AppLocalization.string("credits.section.account_path", fallback: "Account path")) {
+            Section(AppLocalization.string("credits.section.selected_node", fallback: "Prerequisites")) {
                 LabeledContent(AppLocalization.string("credits.inspector.live_nodes", fallback: "Live nodes"), value: "\(store.creditReportingNodes.count)")
-                LabeledContent(AppLocalization.string("credits.inspector.sample_nodes", fallback: "Sample nodes"), value: "\(store.sampleNodeCount)")
                 LabeledContent(AppLocalization.string("credits.inspector.claimed_nodes", fallback: "Claimed nodes"), value: "\(store.claimedNodeCount)")
                 LabeledContent(AppLocalization.string("credits.inspector.keychain_node_secrets", fallback: "Keychain node secrets"), value: "\(store.storedNodeSecretCount)")
-                LabeledContent(AppLocalization.string("credits.inspector.tracked_credits", fallback: "Tracked credits"), value: AppLocalization.string("credits.unit.count", fallback: "%d credits", store.totalNodeCreditBalance))
-                LabeledContent(AppLocalization.string("credits.inspector.premium_gap", fallback: "Premium gap"), value: store.premiumCreditGapDisplayValue)
-            }
-
-            Section(AppLocalization.string("credits.section.selected_node", fallback: "Selected node")) {
-                LabeledContent(AppLocalization.string("node.field.sender_id", fallback: "Sender ID"), value: store.selectedOrFirstCreditNode?.senderID ?? AppLocalization.string("common.none", fallback: "None"))
-                LabeledContent(AppLocalization.string("node.field.claim", fallback: "Claim"), value: store.selectedOrFirstCreditNode?.claimState.title ?? AppLocalization.string("common.unknown", fallback: "Unknown"))
                 LabeledContent(AppLocalization.string("node.field.heartbeat", fallback: "Heartbeat"), value: store.selectedOrFirstCreditNode?.heartbeat.title ?? AppLocalization.string("common.unknown", fallback: "Unknown"))
-                LabeledContent(AppLocalization.string("node.field.claim_url", fallback: "Claim URL"), value: store.selectedOrFirstCreditNode?.claimURL ?? AppLocalization.string("common.none", fallback: "None"))
             }
 
             Section(AppLocalization.string("credits.section.next_action", fallback: "Next action")) {
                 Text(AppLocalization.phrase(store.creditSprintStatusLine))
                     .foregroundStyle(.secondary)
-                Button {
-                    store.performCreditSprintPrimaryAction()
-                } label: {
-                    Label(store.creditSprintPrimaryTitle, systemImage: "arrow.up.right.square")
-                }
             }
         }
+    }
+}
+
+private struct CreditMetricBlock: View {
+    let title: String
+    let value: String
+    let detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(detail)
+                .font(.footnote)
+                .foregroundStyle(.tertiary)
+                .lineLimit(2)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading)
+        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -1578,19 +2165,57 @@ private struct BountyTaskRow: View {
     let task: EvoMapBountyTask
     let isSelected: Bool
     let isClaiming: Bool
+    let isFollowed: Bool
+    let isClaimed: Bool
+    let submissionStatus: String?
+    let requiredReputation: Int?
+    let nodeReputation: Double?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(task.title)
+                    Text(localizedTitle)
                         .font(.body.weight(.semibold))
-                    Text(task.taskID)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.tertiary)
+                    if AppLocalization.hasBountyTranslation(for: task.title) {
+                        Text(AppLocalization.string("bounties.raw_title", fallback: "Original: %@", task.title))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(2)
+                    }
+                    ForEach(identityLines, id: \.self) { line in
+                        Text(line)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
 
                 Spacer()
+
+                if isFollowed {
+                    Image(systemName: "bookmark.fill")
+                        .foregroundStyle(.blue)
+                }
+
+                if isClaimed {
+                    BadgeLabel(
+                        text: AppLocalization.string("bounties.badge.claimed", fallback: "Claimed"),
+                        tintName: "green"
+                    )
+                }
+
+                if let submissionStatus {
+                    BadgeLabel(text: submissionStatus, tintName: "secondary")
+                }
+
+                if let requiredReputation {
+                    BadgeLabel(
+                        text: AppLocalization.string("bounties.badge.reputation_required", fallback: "Rep >= %d", requiredReputation),
+                        tintName: reputationBadgeTint(required: requiredReputation)
+                    )
+                }
 
                 if let credits = task.displayCredits {
                     BadgeLabel(
@@ -1601,7 +2226,7 @@ private struct BountyTaskRow: View {
             }
 
             if let summary = task.summary {
-                Text(summary)
+                Text(AppLocalization.bountyText(summary))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
@@ -1629,9 +2254,9 @@ private struct BountyTaskRow: View {
 
     private var metaLine: String {
         [
-            task.domain,
-            task.kind,
-            task.status,
+            AppLocalization.bountyTerm(task.domain),
+            AppLocalization.bountyTerm(task.kind),
+            AppLocalization.bountyTerm(task.status),
             task.deadline.map {
                 AppLocalization.string("credits.bounty.deadline", fallback: "Deadline %@", $0)
             },
@@ -1639,6 +2264,36 @@ private struct BountyTaskRow: View {
         .compactMap { $0?.nonEmpty }
         .joined(separator: " · ")
         .nonEmpty ?? AppLocalization.string("credits.bounty.no_metadata", fallback: "No extra metadata")
+    }
+
+    private var localizedTitle: String {
+        AppLocalization.bountyText(task.title)
+    }
+
+    private func reputationBadgeTint(required: Int) -> String {
+        guard let nodeReputation else {
+            return "secondary"
+        }
+        return nodeReputation >= Double(required) ? "green" : "orange"
+    }
+
+    private var identityLines: [String] {
+        var lines: [String] = []
+        if let taskID = task.claimableTaskID {
+            lines.append(AppLocalization.string("credits.bounty.id.task", fallback: "task_id: %@", taskID))
+        } else {
+            lines.append(AppLocalization.string("credits.bounty.id.task_resolve", fallback: "task_id: resolve before claim"))
+        }
+        if let bountyID = task.bountyID?.nonEmpty {
+            lines.append(AppLocalization.string("credits.bounty.id.bounty", fallback: "bounty_id: %@", bountyID))
+        }
+        if let questionID = task.questionID?.nonEmpty {
+            lines.append(AppLocalization.string("credits.bounty.id.question", fallback: "question_id: %@", questionID))
+        }
+        if lines.count == 1, task.claimableTaskID == nil {
+            lines.append(AppLocalization.string("credits.bounty.id.row", fallback: "row_id: %@", task.taskID))
+        }
+        return lines
     }
 }
 

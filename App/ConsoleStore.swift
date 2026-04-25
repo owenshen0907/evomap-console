@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 
 @MainActor
@@ -99,7 +100,10 @@ final class ConsoleStore: ObservableObject {
     @Published private(set) var isSubmittingKnowledgeGraphIngest = false
     @Published private(set) var isLoadingAccountBalance = false
     @Published private(set) var isLoadingBountyTasks = false
+    @Published private(set) var isLoadingClaimedBountyTasks = false
+    @Published private(set) var isSubmittingBountyAnswer = false
     @Published private(set) var activeBountyClaimTaskID: String?
+    @Published private(set) var activeBountySubmissionTaskID: String?
     @Published var remoteSkillLoadErrorMessage: String?
     @Published var remoteSkillDetailErrorMessage: String?
     @Published var recycledSkillLoadErrorMessage: String?
@@ -117,6 +121,9 @@ final class ConsoleStore: ObservableObject {
     @Published private(set) var accountBalanceErrorMessage: String?
     @Published private(set) var bountyTaskMessage: String?
     @Published private(set) var bountyTaskErrorMessage: String?
+    @Published private(set) var bountyAnswerDraftMessage: String?
+    @Published private(set) var bountyAnswerDraftErrorMessage: String?
+    @Published private(set) var bountyExecutionMessage: String?
     @Published var nodes: [NodeRecord]
     @Published var skills: [SkillRecord]
     @Published private(set) var remoteSkills: [RemoteSkillSummary] = []
@@ -133,7 +140,20 @@ final class ConsoleStore: ObservableObject {
     @Published private(set) var knowledgeGraphSearchResult: KnowledgeGraphSearchResult?
     @Published private(set) var accountBalanceSnapshot: EvoMapAccountBalanceResponse?
     @Published private(set) var bountyTasks: [EvoMapBountyTask] = []
-    @Published var selectedBountyTaskID: String?
+    @Published private(set) var claimedBountyTasks: [EvoMapClaimedBountyTask] = []
+    @Published private(set) var bountyTaskTotalCount: Int?
+    @Published private(set) var bountyTaskOpenCount: Int?
+    @Published private(set) var bountyTaskMatchedCount: Int?
+    @Published private(set) var bountyTaskCurrentPage = 0
+    @Published private(set) var followedBountyTaskIDs: Set<String> = ConsoleStore.loadFollowedBountyTaskIDs()
+    @Published var selectedBountyTaskID: String? {
+        didSet {
+            guard selectedBountyTaskID != oldValue else { return }
+            loadSelectedBountyAnswerDraft()
+        }
+    }
+    @Published var bountyAnswerDraft = BountyAnswerDraft.empty
+    @Published var bountyExecutionProvider: BountyExecutionProvider = .codexCLI
     @Published private(set) var remoteSkillStoreEnabled = true
     @Published private(set) var remoteSkillTotalCount = 0
     @Published private(set) var remoteSkillTotalDownloads = 0
@@ -151,8 +171,16 @@ final class ConsoleStore: ObservableObject {
     private let skillImportService: SkillImportService
     private let skillWorkspaceStore: SkillWorkspacePersisting
     private let orderWorkspaceStore: OrderWorkspacePersisting
+    private let nodeWorkspaceStore: NodeWorkspacePersisting
     private var remoteSkillSearchTask: Task<Void, Never>?
     private var serviceSearchTask: Task<Void, Never>?
+    private var nodeHeartbeatCooldownUntil: [NodeRecord.ID: Date] = [:]
+
+    private static let minimumManualHeartbeatInterval: TimeInterval = 60
+    private static let rateLimitHeartbeatBackoff: TimeInterval = 120
+    private static let bountyTaskPageSize = 50
+    private static let followedBountyTaskIDsKey = "workspace.followedBountyTaskIDs"
+    private static let bountyAnswerDraftsKey = "workspace.bountyAnswerDrafts"
 
     init(
         nodes: [NodeRecord] = SampleData.nodes,
@@ -161,17 +189,44 @@ final class ConsoleStore: ObservableObject {
         nodeSecretStore: NodeSecretStoring = KeychainNodeSecretStore(),
         skillImportService: SkillImportService = SkillImportService(),
         skillWorkspaceStore: SkillWorkspacePersisting = LocalSkillWorkspaceStore(),
-        orderWorkspaceStore: OrderWorkspacePersisting = LocalOrderWorkspaceStore()
+        orderWorkspaceStore: OrderWorkspacePersisting = LocalOrderWorkspaceStore(),
+        nodeWorkspaceStore: NodeWorkspacePersisting = LocalNodeWorkspaceStore()
     ) {
         self.client = client
         self.nodeSecretStore = nodeSecretStore
         self.skillImportService = skillImportService
         self.skillWorkspaceStore = skillWorkspaceStore
         self.orderWorkspaceStore = orderWorkspaceStore
-        self.nodes = nodes
+        self.nodeWorkspaceStore = nodeWorkspaceStore
+
+        let initialNodes: [NodeRecord]
+        let nodeLoadErrorMessage: String?
+        let storedSenderIDs = (try? nodeSecretStore.listStoredSenderIDs()) ?? []
+        do {
+            let persistedNodes = try nodeWorkspaceStore.loadNodes()
+            let recoveredNodes = Self.recoveredKeychainNodes(
+                from: storedSenderIDs,
+                excluding: persistedNodes + nodes
+            )
+            initialNodes = Self.mergePersistedNodes(
+                persistedNodes + recoveredNodes,
+                withFallbackNodes: nodes
+            )
+            nodeLoadErrorMessage = nil
+        } catch {
+            let recoveredNodes = Self.recoveredKeychainNodes(
+                from: storedSenderIDs,
+                excluding: nodes
+            )
+            initialNodes = Self.mergePersistedNodes(recoveredNodes, withFallbackNodes: nodes)
+            nodeLoadErrorMessage = error.localizedDescription
+        }
+
+        self.nodes = initialNodes
         self.skills = skills
-        self.selectedNodeID = nodes.first?.id
+        self.selectedNodeID = Self.displayNodes(from: initialNodes).first?.id
         self.selectedSkillID = skills.first?.id
+        self.nodeConnectionErrorMessage = nodeLoadErrorMessage
 
         do {
             let storedOrders = try orderWorkspaceStore.loadTrackedOrders()
@@ -193,10 +248,95 @@ final class ConsoleStore: ObservableObject {
         selectedSection.searchPrompt
     }
 
+    var visibleNodes: [NodeRecord] {
+        Self.displayNodes(from: nodes)
+    }
+
+    private static func displayNodes(from nodes: [NodeRecord]) -> [NodeRecord] {
+        let liveNodes = nodes.filter { $0.isSampleData == false }
+        return liveNodes.isEmpty ? nodes : liveNodes
+    }
+
+    private static func mergePersistedNodes(
+        _ persistedNodes: [NodeRecord],
+        withFallbackNodes fallbackNodes: [NodeRecord]
+    ) -> [NodeRecord] {
+        guard persistedNodes.isEmpty == false else {
+            return fallbackNodes
+        }
+
+        let persistedIDs = Set(persistedNodes.map(\.id))
+        let persistedSenderIDs = Set(persistedNodes.map(\.senderID))
+        let additionalLiveNodes = fallbackNodes.filter { node in
+            node.isSampleData == false
+                && persistedIDs.contains(node.id) == false
+                && persistedSenderIDs.contains(node.senderID) == false
+        }
+        let sampleNodes = fallbackNodes.filter(\.isSampleData)
+        return persistedNodes + additionalLiveNodes + sampleNodes
+    }
+
+    private static func recoveredKeychainNodes(
+        from senderIDs: [String],
+        excluding knownNodes: [NodeRecord]
+    ) -> [NodeRecord] {
+        let knownSenderIDs = Set(knownNodes.map(\.senderID))
+        var seenSenderIDs = Set<String>()
+
+        return senderIDs.compactMap { rawSenderID in
+            guard let senderID = rawSenderID.nonEmpty,
+                  knownSenderIDs.contains(senderID) == false,
+                  seenSenderIDs.insert(senderID).inserted else {
+                return nil
+            }
+
+            let recoveredAt = Date()
+            return NodeRecord(
+                id: UUID(),
+                name: AppLocalization.string("node.recovered.name", fallback: "Recovered node"),
+                senderID: senderID,
+                apiBaseURL: ConsoleAppSettings.hubBaseURL,
+                environment: .production,
+                modelName: ConsoleAppSettings.defaultNodeModel,
+                geneCount: 0,
+                capsuleCount: 0,
+                claimState: .pending,
+                heartbeat: .warning,
+                lastSeen: recoveredAt,
+                onlineWorkers: 0,
+                creditBalance: 0,
+                claimCode: nil,
+                claimURL: nil,
+                referralCode: nil,
+                survivalStatus: nil,
+                nodeSecretStored: true,
+                lastErrorMessage: nil,
+                notes: AppLocalization.string(
+                    "node.recovered.note",
+                    fallback: "Recovered from a Keychain node_secret. Run heartbeat to refresh official state before creating another node."
+                ),
+                recentEvents: [
+                    NodeEvent(
+                        timestamp: recoveredAt,
+                        title: "Recovered from Keychain",
+                        detail: "A stored node_secret was found for this sender ID, so the app restored a local node instead of asking you to create a new one.",
+                        titleKey: "node.event.recovered_keychain.title",
+                        detailKey: "node.event.recovered_keychain.detail"
+                    )
+                ],
+                recommendedHeartbeatIntervalMS: nil,
+                heartbeatEndpoint: nil,
+                heartbeatSnapshot: nil,
+                isSampleData: false
+            )
+        }
+    }
+
     var filteredNodes: [NodeRecord] {
-        guard !searchText.isEmpty else { return nodes }
+        let source = visibleNodes
+        guard !searchText.isEmpty else { return source }
         let query = searchText.normalizedSearchKey
-        return nodes.filter {
+        return source.filter {
             $0.name.normalizedSearchKey.contains(query)
                 || $0.senderID.normalizedSearchKey.contains(query)
                 || $0.apiBaseURL.normalizedSearchKey.contains(query)
@@ -305,9 +445,9 @@ final class ConsoleStore: ObservableObject {
     }
 
     var selectedNode: NodeRecord? {
-        let source = filteredNodes.isEmpty ? nodes : filteredNodes
+        let source = filteredNodes.isEmpty ? visibleNodes : filteredNodes
         guard let selectedNodeID else { return source.first }
-        return source.first(where: { $0.id == selectedNodeID }) ?? nodes.first(where: { $0.id == selectedNodeID })
+        return source.first(where: { $0.id == selectedNodeID }) ?? source.first
     }
 
     var selectedSkill: SkillRecord? {
@@ -391,6 +531,8 @@ final class ConsoleStore: ObservableObject {
             return AppLocalization.string("primary.connect_node", fallback: "Connect Node")
         case .credits:
             return creditSprintPrimaryTitle
+        case .bounties:
+            return AppLocalization.string("primary.refresh_bounties", fallback: "Refresh Bounties")
         case .skills:
             switch skillWorkspaceMode {
             case .local:
@@ -1142,6 +1284,356 @@ final class ConsoleStore: ObservableObject {
         return bountyTasks.first(where: { $0.id == selectedBountyTaskID }) ?? bountyTasks.first
     }
 
+    var selectedClaimedBountyTask: EvoMapClaimedBountyTask? {
+        guard let task = selectedBountyTask else { return claimedBountyTasks.first }
+        return claimedBountyTask(for: task)
+    }
+
+    var selectedBountyTaskIsClaimed: Bool {
+        selectedClaimedBountyTask != nil
+    }
+
+    var filteredBountyTasks: [EvoMapBountyTask] {
+        guard searchText.isEmpty == false else {
+            return bountyTasks
+        }
+        let query = searchText.normalizedSearchKey
+        return bountyTasks.filter { task in
+            [
+                task.title,
+                AppLocalization.bountyText(task.title),
+                task.summary,
+                task.domain,
+                task.kind,
+                task.status,
+                task.bountyID,
+                task.questionID,
+                task.claimableTaskID,
+            ]
+            .compactMap { $0 }
+            .joined(separator: " ")
+            .normalizedSearchKey
+            .contains(query)
+        }
+    }
+
+    var followedBountyTasks: [EvoMapBountyTask] {
+        bountyTasks.filter { followedBountyTaskIDs.contains($0.id) }
+    }
+
+    var claimedBountyDisplayTasks: [EvoMapBountyTask] {
+        claimedBountyTasks.map { claimed in
+            bountyTasks.first(where: { bountyTaskMatchesClaimedTask($0, claimed: claimed) })
+                ?? EvoMapBountyTask(claimedTask: claimed)
+        }
+    }
+
+    var hasMoreBountyTasks: Bool {
+        if let bountyTaskTotalCount {
+            return bountyTasks.count < bountyTaskTotalCount
+        }
+        return bountyTaskCurrentPage > 0 && bountyTasks.count >= Self.bountyTaskPageSize
+    }
+
+    var bountyTaskLoadedCountLine: String {
+        if let total = bountyTaskTotalCount {
+            return AppLocalization.string(
+                "bounties.loaded_count",
+                fallback: "Loaded %d / %@",
+                bountyTasks.count,
+                total.formatted(.number)
+            )
+        }
+        return AppLocalization.string(
+            "bounties.loaded_count_unknown",
+            fallback: "Loaded %d",
+            bountyTasks.count
+        )
+    }
+
+    var claimedBountyTaskCountLine: String {
+        AppLocalization.string(
+            "bounties.claimed_count",
+            fallback: "Claimed %d",
+            claimedBountyTasks.count
+        )
+    }
+
+    var selectedBountyTaskIsFollowed: Bool {
+        guard let selectedBountyTask else { return false }
+        return followedBountyTaskIDs.contains(selectedBountyTask.id)
+    }
+
+    var selectedBountyClaimedStatusLine: String {
+        guard let claimed = selectedClaimedBountyTask else {
+            return AppLocalization.string(
+                "bounties.delivery.claim_required",
+                fallback: "Claim this task before preparing the final EvoMap submission."
+            )
+        }
+
+        let status = AppLocalization.bountyTerm(claimed.mySubmissionStatus ?? claimed.status)
+            ?? claimed.mySubmissionStatus
+            ?? claimed.status
+            ?? AppLocalization.unknown
+        let submission = claimed.mySubmissionID?.nonEmpty ?? AppLocalization.unknown
+        return AppLocalization.string(
+            "bounties.delivery.claimed_status",
+            fallback: "Claimed task %@. Submission %@ is %@.",
+            claimed.taskID,
+            submission,
+            status
+        )
+    }
+
+    var selectedBountySubmissionPreview: String {
+        guard let task = selectedBountyTask else { return "" }
+        let taskID = selectedClaimedBountyTask?.taskID
+            ?? task.claimableTaskID
+            ?? AppLocalization.string("bounties.value.resolve_before_claim", fallback: "Resolve before claim")
+        let nodeID = selectedOrFirstCreditNode?.senderID ?? AppLocalization.chooseConnectedNode
+        let bundle = try? makeBountyPublishBundle(task: task, taskID: taskID, node: selectedOrFirstCreditNode, draft: bountyAnswerDraft)
+        let assetID = bundle?.capsuleAssetID ?? "sha256:..."
+
+        return """
+        POST /a2a/publish
+        {
+          "message_type": "publish",
+          "sender_id": "\(nodeID)",
+          "payload": {
+            "assets": ["Gene", "Capsule"],
+            "capsule_asset_id": "\(assetID)"
+          }
+        }
+
+        POST /a2a/task/complete
+        {
+          "task_id": "\(taskID)",
+          "asset_id": "\(assetID)",
+          "node_id": "\(nodeID)"
+        }
+        """
+    }
+
+    var canSubmitSelectedBountyAnswer: Bool {
+        guard selectedBountyTask != nil,
+              selectedClaimedBountyTask != nil,
+              bountyAnswerDraft.answerText.nonEmpty != nil else {
+            return false
+        }
+        return isSubmittingBountyAnswer == false
+            && bountyTaskPrerequisiteBlocker == nil
+            && loadStoredSecret(for: selectedOrFirstCreditNode?.senderID ?? "")?.nonEmpty != nil
+    }
+
+    var selectedBountyExecutionBrief: String {
+        guard let task = selectedBountyTask else { return "" }
+        let claimed = selectedClaimedBountyTask
+        let title = AppLocalization.bountyText(task.title)
+        let body = task.summary.map { AppLocalization.bountyText($0) }?.nonEmpty ?? AppLocalization.string(
+            "bounties.no_summary",
+            fallback: "No summary returned by the public bounty API."
+        )
+        let taskID = claimed?.taskID ?? task.claimableTaskID ?? AppLocalization.unknown
+        let bountyID = task.bountyID ?? AppLocalization.unknown
+        let reward = task.displayCredits.map { "\($0)" } ?? AppLocalization.unknown
+        let currentDraft = bountyAnswerDraft.answerText.nonEmpty ?? AppLocalization.none
+
+        return """
+        You are executing an EvoMap bounty task for a local macOS operator.
+
+        Hard rules:
+        - Do not call EvoMap submit/complete endpoints.
+        - Do not expose API keys, node_secret values, private paths, or credentials.
+        - Produce a final answer in Markdown that can be pasted into the app's Final answer field.
+        - Keep the answer concrete enough for the bounty owner to accept or reject.
+        - If assumptions are required, label them clearly.
+
+        Task metadata:
+        - task_id: \(taskID)
+        - bounty_id: \(bountyID)
+        - reward_credits: \(reward)
+        - title: \(title)
+        - body: \(body)
+
+        Current local draft:
+        \(currentDraft)
+
+        Required output:
+        1. Final answer only, no process log.
+        2. Include implementation plan, concrete deliverable structure, validation approach, and risks if the task asks for product/code planning.
+        3. If the task is in Chinese, answer in Chinese unless the task explicitly asks for another language.
+        """
+    }
+
+    var selectedBountyExecutionCommand: String {
+        let brief = selectedBountyExecutionBrief
+        guard brief.nonEmpty != nil else { return "" }
+        let cwd = "$HOME/Library/Application Support/EvomapConsole/TaskRuns"
+        switch bountyExecutionProvider {
+        case .codexCLI:
+            return """
+            mkdir -p "\(cwd)" && cat <<'EOF' | /Applications/Codex.app/Contents/Resources/codex exec --cd "\(cwd)" --sandbox workspace-write -
+            \(brief)
+            EOF
+            """
+        case .claudeCode:
+            return """
+            mkdir -p "\(cwd)" && cd "\(cwd)" && cat <<'EOF' | /opt/homebrew/bin/claude -p --permission-mode plan --output-format text
+            \(brief)
+            EOF
+            """
+        case .directModel:
+            return AppLocalization.string(
+                "bounties.executor.direct_model.placeholder",
+                fallback: "Direct model execution is intentionally not wired yet. Use the brief with your model/Skill runtime, then paste the result into Final answer."
+            )
+        case .manual:
+            return AppLocalization.string(
+                "bounties.executor.manual.placeholder",
+                fallback: "No command. Use the execution brief as your checklist."
+            )
+        }
+    }
+
+    var patchCourierRelayEmailIsConfigured: Bool {
+        ConsoleAppSettings.patchCourierRelayEmail.nonEmpty != nil
+    }
+
+    var selectedBountyPatchCourierExecuteEmailSubject: String {
+        guard let task = selectedBountyTask else { return "" }
+        return "[EvoMap][EXECUTE][\(selectedBountyPatchCourierTaskID(for: task))] \(AppLocalization.bountyText(task.title))"
+    }
+
+    var selectedBountyPatchCourierStatusEmailSubject: String {
+        guard let task = selectedBountyTask else { return "" }
+        return "[EvoMap][STATUS][\(selectedBountyPatchCourierTaskID(for: task))] \(AppLocalization.bountyText(task.title))"
+    }
+
+    var selectedBountyPatchCourierExecuteEmailBody: String {
+        guard let task = selectedBountyTask else { return "" }
+        let claimed = selectedClaimedBountyTask
+        let taskID = selectedBountyPatchCourierTaskID(for: task)
+        let requestID = "evomap:\(taskID)"
+        let payload = selectedBountyPatchCourierPayload(task: task, claimed: claimed, taskID: taskID)
+        return """
+        PATCH_COURIER_COMMAND: EVOMAP_EXECUTE
+        PATCH_COURIER_PROTOCOL: 1
+        REQUEST_ID: \(requestID)
+        TASK_ID: \(taskID)
+        PROJECT: \(ConsoleAppSettings.patchCourierProjectSlug)
+        MODE: draft
+        AUTO_SUBMIT_ALLOWED: false
+        LANGUAGE: \(ConsoleAppSettings.appLanguage.localeIdentifier)
+
+        Action: Execute this claimed EvoMap bounty task and return a structured draft answer for EvomapConsole. Do not submit to EvoMap.
+
+        ```json
+        \(payload)
+        ```
+        """
+    }
+
+    var selectedBountyPatchCourierStatusEmailBody: String {
+        guard let task = selectedBountyTask else { return "" }
+        let taskID = selectedBountyPatchCourierTaskID(for: task)
+        return """
+        PATCH_COURIER_COMMAND: EVOMAP_STATUS
+        PATCH_COURIER_PROTOCOL: 1
+        REQUEST_ID: evomap:\(taskID)
+        TASK_ID: \(taskID)
+        PROJECT: \(ConsoleAppSettings.patchCourierProjectSlug)
+        LANGUAGE: \(ConsoleAppSettings.appLanguage.localeIdentifier)
+        """
+    }
+
+    var selectedNodeReputationScore: Double? {
+        selectedOrFirstCreditNode?.reputationScore
+    }
+
+    func bountyRequiredReputation(for task: EvoMapBountyTask?) -> Int? {
+        guard let task else { return nil }
+        if let minReputation = task.minReputation {
+            return minReputation
+        }
+        guard let credits = task.displayCredits else {
+            return nil
+        }
+        if credits >= 10 {
+            return 65
+        }
+        if credits >= 5 {
+            return 40
+        }
+        if credits >= 1 {
+            return 20
+        }
+        return 0
+    }
+
+    func canSelectedNodeClaimBounty(_ task: EvoMapBountyTask?) -> Bool? {
+        guard let required = bountyRequiredReputation(for: task) else {
+            return nil
+        }
+        guard let reputation = selectedNodeReputationScore else {
+            return nil
+        }
+        return reputation >= Double(required)
+    }
+
+    var selectedBountyEligibilityLine: String? {
+        guard let task = selectedBountyTask,
+              let required = bountyRequiredReputation(for: task) else {
+            return nil
+        }
+        guard let reputation = selectedNodeReputationScore else {
+            return AppLocalization.string(
+                "bounties.eligibility.unknown",
+                fallback: "Docs default: this bounty requires reputation >= %d. Refresh bounties to read the selected node's reputation.",
+                required
+            )
+        }
+        if reputation >= Double(required) {
+            return AppLocalization.string(
+                "bounties.eligibility.ready",
+                fallback: "Current node reputation %.0f meets the documented requirement >= %d.",
+                reputation,
+                required
+            )
+        }
+        return AppLocalization.string(
+            "bounties.eligibility.insufficient",
+            fallback: "Current node reputation %.0f is below the documented requirement >= %d. Follow this task for later or pick a lower-threshold bounty.",
+            reputation,
+            required
+        )
+    }
+
+    var selectedBountyClaimContextLine: String? {
+        guard let task = selectedBountyTask else { return nil }
+        let nodeID = selectedOrFirstCreditNode?.senderID ?? AppLocalization.unknown
+        if let taskID = task.claimableTaskID {
+            return AppLocalization.string(
+                "credits.bounty.claim_context.ready",
+                fallback: "Claim will send node_id=%@ and task_id=%@.",
+                nodeID,
+                taskID
+            )
+        }
+        if let bountyID = task.bountyID?.nonEmpty {
+            return AppLocalization.string(
+                "credits.bounty.claim_context.resolve",
+                fallback: "Claim will resolve task_id from bounty_id=%@, then send node_id=%@.",
+                bountyID,
+                nodeID
+            )
+        }
+        return AppLocalization.string(
+            "credits.bounty.claim_context.missing",
+            fallback: "This row has no task_id or bounty_id, so it cannot be claimed from the app yet."
+        )
+    }
+
     var officialAccountBalanceDisplayValue: String {
         guard let value = accountBalanceSnapshot?.bestBalance else {
             return AppLocalization.string("credits.value.official_account_page", fallback: "Check EvoMap account page")
@@ -1177,6 +1669,12 @@ final class ConsoleStore: ObservableObject {
     var bountyTaskPrerequisiteBlocker: String? {
         guard let node = selectedOrFirstCreditNode else {
             return AppLocalization.string("credits.bounty.blocker.no_node", fallback: "Connect a real node first.")
+        }
+        guard node.claimState == .claimed else {
+            return AppLocalization.string(
+                "credits.bounty.blocker.node_not_claimed",
+                fallback: "Finish node claim in Nodes first, then return here to claim bounty tasks."
+            )
         }
         guard loadStoredSecret(for: node.senderID)?.nonEmpty != nil else {
             return AppLocalization.string("credits.bounty.blocker.no_secret", fallback: "Run /a2a/hello first so the node_secret is stored in Keychain.")
@@ -1228,13 +1726,7 @@ final class ConsoleStore: ObservableObject {
     }
 
     var creditSprintPrimaryTitle: String {
-        if storedNodeSecretCount == 0 {
-            return AppLocalization.string("primary.connect_node", fallback: "Connect Node")
-        }
-        if claimedNodeCount == 0 {
-            return AppLocalization.string("primary.open_claim", fallback: "Open Claim")
-        }
-        return AppLocalization.string("primary.open_bounties", fallback: "Open Bounties")
+        return AppLocalization.string("primary.open_bounty_tracker", fallback: "Open Bounty Tracker")
     }
 
     var creditSprintStatusLine: String {
@@ -1272,37 +1764,37 @@ final class ConsoleStore: ObservableObject {
     var creditSprintSteps: [CreditSprintStep] {
         [
             CreditSprintStep(
-                id: "connect",
-                title: AppLocalization.string("credits.step.connect.title", fallback: "Connect local node"),
-                detail: AppLocalization.string(
-                    "credits.step.connect.detail",
-                    fallback: "Use `/a2a/hello`; this stores node_secret in Keychain and unlocks authenticated node actions."
-                ),
-                systemImage: "server.rack",
-                tintName: storedNodeSecretCount > 0 ? "green" : "orange",
-                isComplete: storedNodeSecretCount > 0
-            ),
-            CreditSprintStep(
-                id: "claim",
-                title: AppLocalization.string("credits.step.claim.title", fallback: "Claim the node"),
-                detail: AppLocalization.string(
-                    "credits.step.claim.detail",
-                    fallback: "Open the claim URL so credits and future earnings attach to your EvoMap account."
-                ),
-                systemImage: "link.badge.plus",
-                tintName: claimedNodeCount > 0 ? "green" : "orange",
-                isComplete: claimedNodeCount > 0
-            ),
-            CreditSprintStep(
-                id: "bounties",
+                id: "find_bounties",
                 title: AppLocalization.string("credits.step.bounties.title", fallback: "Work bounty questions"),
                 detail: AppLocalization.string(
                     "credits.step.bounties.detail",
-                    fallback: "Filter for bounty-backed questions, then start with language, education, and content-structure tasks."
+                    fallback: "Refresh bounty-backed questions, then start with language, education, and content-structure tasks."
                 ),
                 systemImage: "target",
-                tintName: claimedNodeCount > 0 ? "blue" : "secondary",
-                isComplete: false
+                tintName: bountyTasks.isEmpty ? "blue" : "green",
+                isComplete: bountyTasks.isEmpty == false
+            ),
+            CreditSprintStep(
+                id: "claim_task",
+                title: AppLocalization.string("credits.step.claim_task.title", fallback: "Claim one task"),
+                detail: AppLocalization.string(
+                    "credits.step.claim_task.detail",
+                    fallback: "Pick only tasks you can solve cleanly, then claim the selected bounty."
+                ),
+                systemImage: "hand.raised",
+                tintName: selectedBountyTaskIsClaimed ? "green" : (activeBountyClaimTaskID == nil ? "blue" : "orange"),
+                isComplete: selectedBountyTaskIsClaimed
+            ),
+            CreditSprintStep(
+                id: "submit_answer",
+                title: AppLocalization.string("credits.step.submit_answer.title", fallback: "Submit and settle"),
+                detail: AppLocalization.string(
+                    "credits.step.submit_answer.detail",
+                    fallback: "Publish a verifiable answer Capsule, complete the task, then wait for EvoMap settlement."
+                ),
+                systemImage: "paperplane",
+                tintName: bountyAnswerDraft.publishedAssetID == nil ? "blue" : "green",
+                isComplete: bountyAnswerDraft.publishedAssetID != nil
             ),
             CreditSprintStep(
                 id: "service",
@@ -1332,12 +1824,6 @@ final class ConsoleStore: ObservableObject {
         ]
     }
 
-    var bestCreditNodeClaimURL: URL? {
-        let node = selectedOrFirstCreditNode
-        guard let claimURL = node?.claimURL else { return nil }
-        return URL(string: claimURL)
-    }
-
     var evoMapBountiesURL: URL {
         URL(string: "https://evomap.ai/bounties")!
     }
@@ -1348,6 +1834,10 @@ final class ConsoleStore: ObservableObject {
 
     var evoMapAPIKeysURL: URL {
         URL(string: "\(ConsoleAppSettings.hubBaseURL)/account/api-keys")!
+    }
+
+    var evoMapReputationDocsURL: URL {
+        URL(string: "\(ConsoleAppSettings.hubBaseURL)/wiki/06-billing-reputation")!
     }
 
     var overviewMetrics: [OverviewMetric] {
@@ -1409,9 +1899,19 @@ final class ConsoleStore: ObservableObject {
         selectedSection = section
         switch section {
         case .nodes:
-            selectedNodeID = selectedNodeID ?? nodes.first?.id
-        case .credits:
-            selectedNodeID = selectedNodeID ?? nodes.first?.id
+            selectedNodeID = selectedNodeID ?? visibleNodes.first?.id
+        case .credits, .bounties:
+            selectedNodeID = selectedNodeID ?? selectedOrFirstCreditNode?.id ?? visibleNodes.first?.id
+            selectedBountyTaskID = selectedBountyTaskID ?? bountyTasks.first?.id
+            if section == .bounties, bountyTasks.isEmpty {
+                Task {
+                    await refreshBountyTasks()
+                }
+            } else if section == .bounties, claimedBountyTasks.isEmpty {
+                Task {
+                    await refreshClaimedBountyTasks()
+                }
+            }
         case .skills:
             switch skillWorkspaceMode {
             case .local:
@@ -1456,6 +1956,10 @@ final class ConsoleStore: ObservableObject {
         case .credits:
             lastRefreshAt = Date()
             refreshStoredSecretFlags()
+        case .bounties:
+            Task {
+                await refreshBountyTasks()
+            }
         case .skills:
             switch skillWorkspaceMode {
             case .local:
@@ -1500,6 +2004,8 @@ final class ConsoleStore: ObservableObject {
             prepareNodeConnection()
         case .credits:
             performCreditSprintPrimaryAction()
+        case .bounties:
+            refreshCurrentSection()
         case .skills:
             if skillWorkspaceMode == .local {
                 prepareSkillImport()
@@ -1531,17 +2037,7 @@ final class ConsoleStore: ObservableObject {
     }
 
     func performCreditSprintPrimaryAction() {
-        if storedNodeSecretCount == 0 {
-            prepareNodeConnection()
-            return
-        }
-
-        if claimedNodeCount == 0, let claimURL = bestCreditNodeClaimURL {
-            NSWorkspace.shared.open(claimURL)
-            return
-        }
-
-        NSWorkspace.shared.open(evoMapBountiesURL)
+        setSection(.bounties)
     }
 
     func openURL(_ url: URL) {
@@ -1583,16 +2079,43 @@ final class ConsoleStore: ObservableObject {
     }
 
     func refreshBountyTasks() async {
-        guard !isLoadingBountyTasks else { return }
+        await loadBountyTasks(page: 1, append: false)
+        await refreshClaimedBountyTasks()
+    }
+
+    func loadMoreBountyTasks() async {
+        guard hasMoreBountyTasks else { return }
+        await loadBountyTasks(page: max(bountyTaskCurrentPage + 1, 1), append: true)
+    }
+
+    func refreshClaimedBountyTasks() async {
+        guard !isLoadingClaimedBountyTasks else { return }
         guard let node = selectedOrFirstCreditNode else {
             bountyTaskErrorMessage = AppLocalization.string("credits.bounty.blocker.no_node", fallback: "Connect a real node first.")
             return
         }
-        guard let nodeSecret = loadStoredSecret(for: node.senderID)?.nonEmpty else {
-            bountyTaskErrorMessage = AppLocalization.string(
-                "credits.bounty.blocker.no_secret",
-                fallback: "Run /a2a/hello first so the node_secret is stored in Keychain."
+
+        isLoadingClaimedBountyTasks = true
+        defer { isLoadingClaimedBountyTasks = false }
+
+        do {
+            let response = try await client.myBountyTasks(
+                request: EvoMapMyBountyTasksRequest(
+                    baseURL: node.apiBaseURL,
+                    nodeID: node.senderID,
+                    nodeSecret: loadStoredSecret(for: node.senderID)?.nonEmpty
+                )
             )
+            applyClaimedBountyTaskResponse(response)
+        } catch {
+            bountyTaskErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func loadBountyTasks(page: Int, append: Bool) async {
+        guard !isLoadingBountyTasks else { return }
+        guard let node = selectedOrFirstCreditNode else {
+            bountyTaskErrorMessage = AppLocalization.string("credits.bounty.blocker.no_node", fallback: "Connect a real node first.")
             return
         }
 
@@ -1602,31 +2125,139 @@ final class ConsoleStore: ObservableObject {
         defer { isLoadingBountyTasks = false }
 
         do {
-            let response = try await client.listBountyTasks(
-                request: EvoMapBountyTaskListRequest(
+            await refreshNodeProfile(for: node)
+            let response = try await client.listPublicBountyTasks(
+                request: EvoMapPublicBountyTaskListRequest(
                     baseURL: node.apiBaseURL,
-                    nodeSecret: nodeSecret,
-                    minBounty: 1,
-                    limit: 25
+                    limit: Self.bountyTaskPageSize,
+                    page: page,
+                    hasBounty: true
                 )
             )
-            bountyTasks = response.tasks
-            selectedBountyTaskID = bountyTasks.first(where: { $0.id == selectedBountyTaskID })?.id ?? bountyTasks.first?.id
-            bountyTaskMessage = response.message?.nonEmpty ?? AppLocalization.string(
-                "credits.bounty.message.loaded",
-                fallback: "Loaded %d bounty task(s).",
-                bountyTasks.count
+            applyBountyTaskResponse(response, page: page, append: append)
+            bountyTaskMessage = AppLocalization.string(
+                "credits.bounty.message.loaded_public",
+                fallback: "Loaded %d of %@ public bounty task(s). Claiming still depends on node eligibility.",
+                bountyTasks.count,
+                response.total.map { $0.formatted(.number) } ?? AppLocalization.unknown
             )
         } catch {
-            bountyTaskErrorMessage = error.localizedDescription
+            guard append == false else {
+                bountyTaskErrorMessage = error.localizedDescription
+                return
+            }
+            guard let nodeSecret = loadStoredSecret(for: node.senderID)?.nonEmpty else {
+                bountyTaskErrorMessage = AppLocalization.string(
+                    "credits.bounty.blocker.no_secret",
+                    fallback: "Run /a2a/hello first so the node_secret is stored in Keychain."
+                )
+                return
+            }
+
+            do {
+                let response = try await client.listBountyTasks(
+                    request: EvoMapBountyTaskListRequest(
+                        baseURL: node.apiBaseURL,
+                        nodeSecret: nodeSecret,
+                        minBounty: 1,
+                        limit: Self.bountyTaskPageSize
+                    )
+                )
+                applyBountyTaskResponse(response, page: 1, append: false)
+                bountyTaskMessage = response.message?.nonEmpty ?? AppLocalization.string(
+                    "credits.bounty.message.loaded",
+                    fallback: "Loaded %d bounty task(s).",
+                    bountyTasks.count
+                )
+            } catch {
+                bountyTaskErrorMessage = error.localizedDescription
+            }
         }
+    }
+
+    private func applyBountyTaskResponse(_ response: EvoMapBountyTaskListResponse, page: Int, append: Bool) {
+        if append {
+            let existingIDs = Set(bountyTasks.map(\.id))
+            bountyTasks += response.tasks.filter { existingIDs.contains($0.id) == false }
+        } else {
+            bountyTasks = response.tasks
+        }
+        bountyTaskTotalCount = response.total
+        bountyTaskOpenCount = response.openCount
+        bountyTaskMatchedCount = response.matchedCount
+        bountyTaskCurrentPage = page
+        selectedBountyTaskID = bountyTasks.first(where: { $0.id == selectedBountyTaskID })?.id ?? bountyTasks.first?.id
+        loadSelectedBountyAnswerDraft()
+    }
+
+    private func applyClaimedBountyTaskResponse(_ response: EvoMapMyBountyTasksResponse) {
+        claimedBountyTasks = response.tasks
+
+        let existingIDs = Set(bountyTasks.map(\.id))
+        let claimedDisplayTasks = response.tasks
+            .map { EvoMapBountyTask(claimedTask: $0) }
+            .filter { existingIDs.contains($0.id) == false }
+
+        if claimedDisplayTasks.isEmpty == false {
+            bountyTasks = claimedDisplayTasks + bountyTasks
+        }
+
+        if let selectedBountyTaskID,
+           bountyTasks.contains(where: { $0.id == selectedBountyTaskID }) {
+            loadSelectedBountyAnswerDraft()
+        } else {
+            selectedBountyTaskID = bountyTasks.first?.id
+        }
+    }
+
+    private func refreshNodeProfile(for node: NodeRecord) async {
+        guard node.isSampleData == false else { return }
+        do {
+            let profile = try await client.nodeProfile(
+                request: EvoMapNodeProfileRequest(baseURL: node.apiBaseURL, nodeID: node.senderID)
+            )
+            applyNodeProfile(profile, for: node.id)
+        } catch {
+            // Public node profile is advisory. Do not block bounty loading when it is unavailable.
+        }
+    }
+
+    private func applyNodeProfile(_ profile: EvoMapNodeProfileResponse, for nodeID: NodeRecord.ID) {
+        guard let index = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var node = nodes[index]
+        node.reputationScore = profile.reputationScore ?? node.reputationScore
+        node.survivalStatus = profile.survivalStatus ?? node.survivalStatus
+        if let online = profile.online {
+            node.heartbeat = online ? node.heartbeat : .offline
+        }
+        nodes[index] = node
+        persistLiveNodes()
     }
 
     func claimBountyTask(_ task: EvoMapBountyTask?) async {
         guard activeBountyClaimTaskID == nil else { return }
         guard let task else { return }
+        guard task.claimableTaskID != nil || task.bountyID?.nonEmpty != nil else {
+            bountyTaskErrorMessage = AppLocalization.string(
+                "credits.bounty.error.no_claimable_task",
+                fallback: "This public bounty row does not include a claimable task ID."
+            )
+            return
+        }
         guard let node = selectedOrFirstCreditNode else {
             bountyTaskErrorMessage = AppLocalization.string("credits.bounty.blocker.no_node", fallback: "Connect a real node first.")
+            return
+        }
+        guard node.claimState == .claimed else {
+            bountyTaskErrorMessage = AppLocalization.string(
+                "credits.bounty.blocker.node_not_claimed",
+                fallback: "Finish node claim in Nodes first, then return here to claim bounty tasks."
+            )
+            return
+        }
+        await refreshNodeProfile(for: node)
+        guard canSelectedNodeClaimBounty(task) != false else {
+            bountyTaskErrorMessage = selectedBountyEligibilityLine
             return
         }
         guard let nodeSecret = loadStoredSecret(for: node.senderID)?.nonEmpty else {
@@ -1643,29 +2274,589 @@ final class ConsoleStore: ObservableObject {
         defer { activeBountyClaimTaskID = nil }
 
         do {
+            let claimTaskID = try await claimableTaskID(for: task, baseURL: node.apiBaseURL)
             let response = try await client.claimBountyTask(
                 request: EvoMapBountyTaskClaimRequest(
                     baseURL: node.apiBaseURL,
                     nodeSecret: nodeSecret,
                     payload: EvoMapBountyTaskClaimPayload(
                         senderID: node.senderID,
-                        taskID: task.taskID
+                        nodeID: node.senderID,
+                        taskID: claimTaskID
                     )
                 )
             )
             bountyTaskMessage = response.message?.nonEmpty ?? AppLocalization.string(
                 "credits.bounty.message.claimed",
                 fallback: "Claimed task %@.",
-                response.taskID ?? task.taskID
+                response.taskID ?? claimTaskID
             )
             selectedBountyTaskID = task.id
+            followBountyTask(task)
+            await refreshClaimedBountyTasks()
         } catch {
-            bountyTaskErrorMessage = error.localizedDescription
+            bountyTaskErrorMessage = Self.bountyClaimFailureMessage(error)
         }
     }
 
+    func toggleSelectedBountyTaskFollow() {
+        guard let task = selectedBountyTask else { return }
+        if followedBountyTaskIDs.contains(task.id) {
+            followedBountyTaskIDs.remove(task.id)
+        } else {
+            followedBountyTaskIDs.insert(task.id)
+        }
+        persistFollowedBountyTaskIDs()
+    }
+
+    func isFollowingBountyTask(_ task: EvoMapBountyTask) -> Bool {
+        followedBountyTaskIDs.contains(task.id)
+    }
+
+    private func followBountyTask(_ task: EvoMapBountyTask) {
+        guard followedBountyTaskIDs.contains(task.id) == false else { return }
+        followedBountyTaskIDs.insert(task.id)
+        persistFollowedBountyTaskIDs()
+    }
+
     func canClaimBountyTask(_ task: EvoMapBountyTask?) -> Bool {
-        task != nil && activeBountyClaimTaskID == nil && bountyTaskPrerequisiteBlocker == nil
+        guard let task else { return false }
+        return activeBountyClaimTaskID == nil
+            && bountyTaskPrerequisiteBlocker == nil
+            && (task.claimableTaskID != nil || task.bountyID?.nonEmpty != nil)
+            && canSelectedNodeClaimBounty(task) != false
+    }
+
+    private func claimableTaskID(for task: EvoMapBountyTask, baseURL: String) async throws -> String {
+        if let claimableTaskID = task.claimableTaskID {
+            return claimableTaskID
+        }
+
+        guard let bountyID = task.bountyID?.nonEmpty else {
+            throw NSError(
+                domain: "EvomapConsole.BountyTask",
+                code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey: AppLocalization.string(
+                        "credits.bounty.error.no_claimable_task",
+                        fallback: "This public bounty row does not include a claimable task ID."
+                    )
+                ]
+            )
+        }
+
+        let detail = try await client.bountyDetail(
+            request: EvoMapBountyDetailRequest(baseURL: baseURL, bountyID: bountyID)
+        )
+        guard let taskID = detail.taskID?.nonEmpty else {
+            throw NSError(
+                domain: "EvomapConsole.BountyTask",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey: AppLocalization.string(
+                        "credits.bounty.error.no_claimable_task",
+                        fallback: "This public bounty row does not include a claimable task ID."
+                    )
+                ]
+            )
+        }
+        return taskID
+    }
+
+    func selectClaimedBountyTask(_ claimedTask: EvoMapClaimedBountyTask) {
+        let displayTask = bountyTasks.first { bountyTaskMatchesClaimedTask($0, claimed: claimedTask) }
+            ?? EvoMapBountyTask(claimedTask: claimedTask)
+        if bountyTasks.contains(where: { $0.id == displayTask.id }) == false {
+            bountyTasks.insert(displayTask, at: 0)
+        }
+        selectedBountyTaskID = displayTask.id
+    }
+
+    func isClaimedBountyTask(_ task: EvoMapBountyTask) -> Bool {
+        claimedBountyTask(for: task) != nil
+    }
+
+    func claimedSubmissionStatus(for task: EvoMapBountyTask) -> String? {
+        let claimed = claimedBountyTask(for: task)
+        return AppLocalization.bountyTerm(claimed?.mySubmissionStatus ?? claimed?.status)
+            ?? claimed?.mySubmissionStatus
+            ?? claimed?.status
+    }
+
+    func generateSelectedBountySubmissionStructure() {
+        guard let task = selectedBountyTask else { return }
+        let now = Date()
+        let claimed = claimedBountyTask(for: task)
+        bountyAnswerDraft = BountyAnswerDraft(
+            taskKey: bountyDraftKey(for: task),
+            taskID: claimed?.taskID ?? task.claimableTaskID,
+            bountyID: task.bountyID,
+            questionID: task.questionID,
+            title: task.title,
+            body: task.summary,
+            implementationNotes: defaultBountyImplementationNotes(for: task, claimedTask: claimed),
+            answerText: defaultBountyAnswerText(for: task),
+            verificationNotes: defaultBountyVerificationNotes(for: task),
+            followupQuestion: "",
+            generatedAt: now,
+            updatedAt: now,
+            publishedAssetID: claimed?.mySubmissionAssetID,
+            submissionID: claimed?.mySubmissionID,
+            submissionStatus: claimed?.mySubmissionStatus
+        )
+        persistSelectedBountyAnswerDraft()
+        bountyAnswerDraftMessage = AppLocalization.string(
+            "bounties.delivery.message.generated",
+            fallback: "Generated a local implementation and submission structure. Review the answer before publishing."
+        )
+        bountyAnswerDraftErrorMessage = nil
+    }
+
+    func saveSelectedBountyAnswerDraft() {
+        guard selectedBountyTask != nil else { return }
+        persistSelectedBountyAnswerDraft()
+        bountyAnswerDraftMessage = AppLocalization.string(
+            "bounties.delivery.message.saved",
+            fallback: "Draft saved locally on this Mac."
+        )
+        bountyAnswerDraftErrorMessage = nil
+    }
+
+    func copySelectedBountyExecutionBrief() {
+        copyToPasteboard(selectedBountyExecutionBrief)
+        bountyExecutionMessage = AppLocalization.string(
+            "bounties.executor.message.brief_copied",
+            fallback: "Execution brief copied. Paste it into Codex, Claude Code, or your model workflow."
+        )
+    }
+
+    func copySelectedBountyExecutionCommand() {
+        copyToPasteboard(selectedBountyExecutionCommand)
+        bountyExecutionMessage = AppLocalization.string(
+            "bounties.executor.message.command_copied",
+            fallback: "Execution command copied. Run it in Terminal, then paste the produced answer back into Final answer."
+        )
+    }
+
+    func sendSelectedBountyToPatchCourier() {
+        openPatchCourierEmail(
+            subject: selectedBountyPatchCourierExecuteEmailSubject,
+            body: selectedBountyPatchCourierExecuteEmailBody,
+            successMessage: AppLocalization.string(
+                "bounties.patch_courier.message.execute_opened",
+                fallback: "Patch Courier execute email opened. Send it from your mail app to start the remote Codex run."
+            )
+        )
+    }
+
+    func querySelectedBountyPatchCourierStatus() {
+        openPatchCourierEmail(
+            subject: selectedBountyPatchCourierStatusEmailSubject,
+            body: selectedBountyPatchCourierStatusEmailBody,
+            successMessage: AppLocalization.string(
+                "bounties.patch_courier.message.status_opened",
+                fallback: "Patch Courier status email opened. Send it to ask the relay for the latest task state."
+            )
+        )
+    }
+
+    func copySelectedBountyPatchCourierExecuteEmail() {
+        copyToPasteboard(
+            """
+            To: \(ConsoleAppSettings.patchCourierRelayEmail.nonEmpty ?? AppLocalization.missing)
+            Subject: \(selectedBountyPatchCourierExecuteEmailSubject)
+
+            \(selectedBountyPatchCourierExecuteEmailBody)
+            """
+        )
+        bountyExecutionMessage = AppLocalization.string(
+            "bounties.patch_courier.message.execute_copied",
+            fallback: "Patch Courier execute email copied."
+        )
+    }
+
+    func submitSelectedBountyAnswer() async {
+        guard isSubmittingBountyAnswer == false else { return }
+        guard let task = selectedBountyTask,
+              let claimedTask = claimedBountyTask(for: task) else {
+            bountyAnswerDraftErrorMessage = AppLocalization.string(
+                "bounties.delivery.error.not_claimed",
+                fallback: "Claim this bounty before publishing and completing the answer."
+            )
+            return
+        }
+        guard let node = selectedOrFirstCreditNode,
+              let nodeSecret = loadStoredSecret(for: node.senderID)?.nonEmpty else {
+            bountyAnswerDraftErrorMessage = AppLocalization.string(
+                "credits.bounty.blocker.no_secret",
+                fallback: "Run /a2a/hello first so the node_secret is stored in Keychain."
+            )
+            return
+        }
+        guard bountyAnswerDraft.answerText.nonEmpty != nil else {
+            bountyAnswerDraftErrorMessage = AppLocalization.string(
+                "bounties.delivery.error.empty_answer",
+                fallback: "Write the final answer before publishing."
+            )
+            return
+        }
+
+        isSubmittingBountyAnswer = true
+        activeBountySubmissionTaskID = task.id
+        bountyAnswerDraftErrorMessage = nil
+        bountyAnswerDraftMessage = nil
+        defer {
+            isSubmittingBountyAnswer = false
+            activeBountySubmissionTaskID = nil
+        }
+
+        do {
+            persistSelectedBountyAnswerDraft()
+            let bundle = try makeBountyPublishBundle(task: task, taskID: claimedTask.taskID, node: node, draft: bountyAnswerDraft)
+            let publishResponse = try await client.publishAssetBundle(
+                request: EvoMapPublishBundleRequest(
+                    baseURL: node.apiBaseURL,
+                    senderID: node.senderID,
+                    nodeSecret: nodeSecret,
+                    payload: bundle.payload
+                )
+            )
+            let completeResponse = try await client.completeBountyTask(
+                request: EvoMapBountyTaskCompleteRequest(
+                    baseURL: node.apiBaseURL,
+                    nodeSecret: nodeSecret,
+                    payload: EvoMapBountyTaskCompletePayload(
+                        senderID: node.senderID,
+                        nodeID: node.senderID,
+                        taskID: claimedTask.taskID,
+                        assetID: bundle.capsuleAssetID,
+                        followupQuestion: bountyAnswerDraft.followupQuestion.nonEmpty
+                    )
+                )
+            )
+
+            bountyAnswerDraft.publishedAssetID = bundle.capsuleAssetID
+            bountyAnswerDraft.submissionID = completeResponse.submissionID
+                ?? claimedTask.mySubmissionID
+                ?? publishResponse.bundleID
+            bountyAnswerDraft.submissionStatus = completeResponse.status?.nonEmpty
+                ?? publishResponse.status?.nonEmpty
+                ?? "submitted"
+            persistSelectedBountyAnswerDraft()
+            bountyAnswerDraftMessage = completeResponse.message?.nonEmpty
+                ?? publishResponse.message?.nonEmpty
+                ?? AppLocalization.string(
+                    "bounties.delivery.message.submitted",
+                    fallback: "Published the answer Capsule and completed the task. Wait for EvoMap acceptance and settlement."
+                )
+            await refreshClaimedBountyTasks()
+        } catch {
+            bountyAnswerDraftErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func copyToPasteboard(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private func selectedBountyPatchCourierTaskID(for task: EvoMapBountyTask) -> String {
+        selectedClaimedBountyTask?.taskID
+            ?? task.claimableTaskID
+            ?? task.bountyID
+            ?? task.questionID
+            ?? task.id
+    }
+
+    private func selectedBountyPatchCourierPayload(
+        task: EvoMapBountyTask,
+        claimed: EvoMapClaimedBountyTask?,
+        taskID: String
+    ) -> String {
+        let payload: [String: Any] = [
+            "task_id": taskID,
+            "bounty_id": task.bountyID ?? "",
+            "question_id": task.questionID ?? "",
+            "submission_id": claimed?.mySubmissionID ?? "",
+            "submission_status": claimed?.mySubmissionStatus ?? "",
+            "title": AppLocalization.bountyText(task.title),
+            "body": task.summary.map { AppLocalization.bountyText($0) } ?? "",
+            "raw_title": task.title,
+            "raw_body": task.summary ?? "",
+            "reward_credits": task.displayCredits ?? 0,
+            "required_reputation": bountyRequiredReputation(for: task) ?? 0,
+            "node_id": selectedOrFirstCreditNode?.senderID ?? "",
+            "expected_output": "final_answer_markdown",
+            "current_draft": bountyAnswerDraft.answerText,
+            "verification_notes": bountyAnswerDraft.verificationNotes
+        ]
+
+        guard JSONSerialization.isValidJSONObject(payload),
+              let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]),
+              let string = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return string
+    }
+
+    private func openPatchCourierEmail(subject: String, body: String, successMessage: String) {
+        guard let relayEmail = ConsoleAppSettings.patchCourierRelayEmail.nonEmpty else {
+            bountyExecutionMessage = AppLocalization.string(
+                "bounties.patch_courier.error.no_relay",
+                fallback: "Save the Patch Courier relay mailbox in Settings first."
+            )
+            return
+        }
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = relayEmail
+        components.queryItems = [
+            URLQueryItem(name: "subject", value: subject),
+            URLQueryItem(name: "body", value: body)
+        ]
+        guard let url = components.url else {
+            bountyExecutionMessage = AppLocalization.string(
+                "bounties.patch_courier.error.mailto",
+                fallback: "Could not create the Patch Courier mailto link."
+            )
+            return
+        }
+        NSWorkspace.shared.open(url)
+        bountyExecutionMessage = successMessage
+    }
+
+    private func claimedBountyTask(for task: EvoMapBountyTask) -> EvoMapClaimedBountyTask? {
+        claimedBountyTasks.first { bountyTaskMatchesClaimedTask(task, claimed: $0) }
+    }
+
+    private func bountyTaskMatchesClaimedTask(_ task: EvoMapBountyTask, claimed: EvoMapClaimedBountyTask) -> Bool {
+        if task.claimableTaskID == claimed.taskID || task.taskID == claimed.taskID || task.id == claimed.taskID {
+            return true
+        }
+        if let bountyID = task.bountyID?.nonEmpty,
+           bountyID == claimed.bountyID?.nonEmpty {
+            return true
+        }
+        if let questionID = task.questionID?.nonEmpty,
+           questionID == claimed.questionID?.nonEmpty {
+            return true
+        }
+        return false
+    }
+
+    private func loadSelectedBountyAnswerDraft() {
+        guard let task = selectedBountyTask else {
+            bountyAnswerDraft = .empty
+            return
+        }
+
+        let key = bountyDraftKey(for: task)
+        if let stored = Self.loadBountyAnswerDrafts()[key] {
+            bountyAnswerDraft = stored
+            return
+        }
+
+        let claimed = claimedBountyTask(for: task)
+        bountyAnswerDraft = BountyAnswerDraft(
+            taskKey: key,
+            taskID: claimed?.taskID ?? task.claimableTaskID,
+            bountyID: task.bountyID,
+            questionID: task.questionID,
+            title: task.title,
+            body: task.summary,
+            implementationNotes: "",
+            answerText: "",
+            verificationNotes: "",
+            followupQuestion: "",
+            generatedAt: nil,
+            updatedAt: Date(),
+            publishedAssetID: claimed?.mySubmissionAssetID,
+            submissionID: claimed?.mySubmissionID,
+            submissionStatus: claimed?.mySubmissionStatus
+        )
+    }
+
+    private func persistSelectedBountyAnswerDraft() {
+        guard let task = selectedBountyTask else { return }
+        var draft = bountyAnswerDraft
+        draft.taskKey = bountyDraftKey(for: task)
+        draft.taskID = selectedClaimedBountyTask?.taskID ?? task.claimableTaskID
+        draft.bountyID = task.bountyID
+        draft.questionID = task.questionID
+        draft.title = task.title
+        draft.body = task.summary
+        draft.updatedAt = Date()
+        bountyAnswerDraft = draft
+
+        var drafts = Self.loadBountyAnswerDrafts()
+        drafts[draft.taskKey] = draft
+        Self.saveBountyAnswerDrafts(drafts)
+    }
+
+    private func bountyDraftKey(for task: EvoMapBountyTask) -> String {
+        task.claimableTaskID ?? task.bountyID ?? task.questionID ?? task.id
+    }
+
+    private func defaultBountyImplementationNotes(for task: EvoMapBountyTask, claimedTask: EvoMapClaimedBountyTask?) -> String {
+        let taskID = claimedTask?.taskID ?? task.claimableTaskID ?? AppLocalization.unknown
+        return AppLocalization.string(
+            "bounties.delivery.default.implementation",
+            fallback: "1. Confirm the task request and acceptance criteria.\n2. Draft the answer in a concrete, reviewable structure.\n3. Check assumptions, edge cases, and implementation tradeoffs.\n4. Publish the answer as a Gene + Capsule bundle, then complete task_id=%@.",
+            taskID
+        )
+    }
+
+    private func defaultBountyAnswerText(for task: EvoMapBountyTask) -> String {
+        let title = AppLocalization.bountyText(task.title)
+        let body = task.summary.map { AppLocalization.bountyText($0) }?.nonEmpty
+        return [
+            "# \(title)",
+            "",
+            "## 1. 需求理解",
+            body ?? "请在这里补充你对任务需求的理解、边界和验收标准。",
+            "",
+            "## 2. 实现方案",
+            "- 目标用户和核心场景：",
+            "- MVP 功能拆分：",
+            "- 技术结构或交付物结构：",
+            "- 数据、接口、页面或流程设计：",
+            "",
+            "## 3. 验证方式",
+            "- 如何验证这个方案满足题目：",
+            "- 需要用户确认的假设：",
+            "",
+            "## 4. 最终建议",
+            "给出可执行的下一步，并说明为什么这样做风险最低。"
+        ].joined(separator: "\n")
+    }
+
+    private func defaultBountyVerificationNotes(for task: EvoMapBountyTask) -> String {
+        [
+            AppLocalization.string("bounties.delivery.verify.answer_matches", fallback: "Answer directly addresses the bounty title/body."),
+            AppLocalization.string("bounties.delivery.verify.no_secret", fallback: "No secrets, private keys, or local-only paths are included."),
+            AppLocalization.string("bounties.delivery.verify.reviewable", fallback: "The final answer is concrete enough for the task owner to accept or reject.")
+        ].joined(separator: "\n")
+    }
+
+    private struct BountyPublishBundle {
+        let payload: EvoMapPublishBundlePayload
+        let geneAssetID: String
+        let capsuleAssetID: String
+    }
+
+    private func makeBountyPublishBundle(
+        task: EvoMapBountyTask,
+        taskID: String,
+        node: NodeRecord?,
+        draft: BountyAnswerDraft
+    ) throws -> BountyPublishBundle {
+        let title = AppLocalization.bountyText(task.title)
+        let finalAnswer = draft.answerText.nonEmpty
+            ?? defaultBountyAnswerText(for: task)
+        let signals = Self.bountySignals(from: "\(task.title) \(task.summary ?? "")")
+        let modelName = node?.modelName.nonEmpty
+        let envFingerprint = [
+            "platform": "macOS",
+            "app": "EvomapConsole",
+            "task_id": taskID,
+        ]
+
+        var gene = EvoMapPublishAsset(
+            type: "Gene",
+            schemaVersion: "1.5.0",
+            id: "gene_bounty_answer_\(Self.slug(from: taskID))",
+            category: "innovate",
+            signalsMatch: signals,
+            summary: "Prepare and validate a structured answer for bounty task: \(title)",
+            preconditions: [
+                "The bounty task is claimed by the publishing node.",
+                "The answer draft has been reviewed before submission.",
+            ],
+            strategy: [
+                "Read the bounty title, body, reward, and deadline.",
+                "Draft an answer that directly addresses the requested scenario.",
+                "Check assumptions, validation steps, and acceptance risks.",
+                "Publish the answer Capsule and complete the task with its asset_id.",
+            ],
+            constraints: EvoMapPublishAssetConstraints(maxFiles: 0, forbiddenPaths: [".env", "node_modules/"]),
+            validation: ["node --version"],
+            trigger: nil,
+            gene: nil,
+            confidence: nil,
+            blastRadius: nil,
+            outcome: nil,
+            successStreak: nil,
+            envFingerprint: nil,
+            modelName: modelName,
+            domain: "other",
+            assetID: nil
+        )
+        gene.assetID = try Self.assetID(for: gene)
+
+        var capsule = EvoMapPublishAsset(
+            type: "Capsule",
+            schemaVersion: "1.5.0",
+            id: nil,
+            category: nil,
+            signalsMatch: nil,
+            summary: finalAnswer,
+            preconditions: nil,
+            strategy: nil,
+            constraints: nil,
+            validation: nil,
+            trigger: signals,
+            gene: gene.assetID,
+            confidence: 0.78,
+            blastRadius: EvoMapPublishAssetBlastRadius(files: 0, lines: finalAnswer.split(separator: "\n", omittingEmptySubsequences: false).count),
+            outcome: EvoMapPublishAssetOutcome(status: "success", score: 0.78),
+            successStreak: 2,
+            envFingerprint: envFingerprint,
+            modelName: modelName,
+            domain: "other",
+            assetID: nil
+        )
+        capsule.assetID = try Self.assetID(for: capsule)
+
+        return BountyPublishBundle(
+            payload: EvoMapPublishBundlePayload(assets: [gene, capsule]),
+            geneAssetID: gene.assetID ?? "",
+            capsuleAssetID: capsule.assetID ?? ""
+        )
+    }
+
+    private static func bountySignals(from text: String) -> [String] {
+        let tokens = text
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { $0.count >= 3 }
+
+        var result: [String] = ["bounty", "answer", "implementation"]
+        for token in tokens where result.contains(token) == false {
+            result.append(token)
+            if result.count >= 8 { break }
+        }
+        return result
+    }
+
+    private static func slug(from value: String) -> String {
+        let allowed = CharacterSet.alphanumerics
+        let pieces = value.lowercased().unicodeScalars.map { scalar -> String in
+            allowed.contains(scalar) ? String(scalar) : "_"
+        }
+        let slug = pieces.joined()
+            .split(separator: "_")
+            .joined(separator: "_")
+        return String(slug.prefix(48)).nonEmpty ?? "task"
+    }
+
+    private static func assetID(for asset: EvoMapPublishAsset) throws -> String {
+        var unsigned = asset
+        unsigned.assetID = nil
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let data = try encoder.encode(unsigned)
+        let digest = SHA256.hash(data: data)
+        return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
     }
 
     func prepareNodeConnection() {
@@ -1728,16 +2919,103 @@ final class ConsoleStore: ObservableObject {
         }
     }
 
+    func markSelectedNodeClaimed() {
+        guard let node = selectedNode, node.isSampleData == false else { return }
+        guard let index = nodes.firstIndex(where: { $0.id == node.id }) else { return }
+
+        let markedAt = Date()
+        var updated = nodes[index]
+        updated.claimState = .claimed
+        updated.heartbeat = makeHeartbeatState(for: updated.claimState, snapshot: updated.heartbeatSnapshot ?? .empty)
+        updated.notes = AppLocalization.string(
+            "node.claim.local_confirmed_note",
+            fallback: "Claim was marked complete locally after browser confirmation. EvoMap account pages remain the source of truth."
+        )
+        updated.lastErrorMessage = nil
+        prependEvents(
+            [
+                NodeEvent(
+                    timestamp: markedAt,
+                    title: "Claim marked complete",
+                    detail: "Browser claim was confirmed by the user in this app."
+                )
+            ],
+            to: &updated
+        )
+        nodes[index] = updated
+        persistLiveNodes()
+    }
+
+    func forgetSelectedNodeAndSecret() {
+        guard let node = selectedNode, node.isSampleData == false else { return }
+
+        do {
+            try nodeSecretStore.deleteNodeSecret(for: node.senderID)
+        } catch {
+            nodeConnectionErrorMessage = AppLocalization.string(
+                "node.forget.error",
+                fallback: "Could not remove the node_secret from Keychain: %@",
+                error.localizedDescription
+            )
+            return
+        }
+
+        nodes.removeAll { candidate in
+            candidate.isSampleData == false && candidate.senderID == node.senderID
+        }
+        selectedNodeID = Self.displayNodes(from: nodes).first?.id
+        lastRefreshAt = Date()
+        persistLiveNodes()
+    }
+
     func refreshSelectedNodeHeartbeat() async {
         guard !isRefreshingNodeHeartbeat else { return }
-        guard let selectedNodeID else {
+        guard let node = selectedNode else {
+            lastRefreshAt = Date()
+            return
+        }
+        selectedNodeID = node.id
+
+        if node.isSampleData {
+            applyHeartbeatNotice(
+                message: AppLocalization.string(
+                    "node.heartbeat.notice.sample",
+                    fallback: "This is a built-in demo node. It does not call the live EvoMap heartbeat. Use Connect Node to create a real node."
+                ),
+                for: node.id
+            )
             lastRefreshAt = Date()
             return
         }
 
-        guard let node = nodes.first(where: { $0.id == selectedNodeID }) else {
-            lastRefreshAt = Date()
+        let now = Date()
+        if let cooldownUntil = nodeHeartbeatCooldownUntil[node.id], cooldownUntil > now {
+            applyHeartbeatNotice(
+                message: AppLocalization.string(
+                    "node.heartbeat.notice.cooldown",
+                    fallback: "EvoMap is rate-limiting heartbeat requests. Wait until %@ before refreshing again.",
+                    cooldownUntil.formatted(date: .omitted, time: .shortened)
+                ),
+                for: node.id
+            )
+            lastRefreshAt = now
             return
+        }
+
+        if node.heartbeatSnapshot != nil {
+            let nextManualRefreshAt = node.lastSeen.addingTimeInterval(Self.minimumManualHeartbeatInterval)
+            if nextManualRefreshAt > now {
+                applyHeartbeatNotice(
+                    message: AppLocalization.string(
+                        "node.heartbeat.notice.too_soon",
+                        fallback: "Heartbeat was just synced. Wait until %@ before manually refreshing again.",
+                        nextManualRefreshAt.formatted(date: .omitted, time: .shortened)
+                    ),
+                    for: node.id
+                )
+                lastRefreshAt = now
+                return
+            }
         }
 
         isRefreshingNodeHeartbeat = true
@@ -1774,9 +3052,16 @@ final class ConsoleStore: ObservableObject {
 
         do {
             let response = try await client.heartbeat(request: request)
+            nodeHeartbeatCooldownUntil[node.id] = nil
             applyHeartbeatResponse(response, for: node.id)
         } catch {
-            applyHeartbeatFailure(message: error.localizedDescription, for: node.id, markOffline: true)
+            let message = Self.heartbeatFailureMessage(error)
+            if Self.isRateLimitError(error) {
+                nodeHeartbeatCooldownUntil[node.id] = Date().addingTimeInterval(Self.rateLimitHeartbeatBackoff)
+                applyHeartbeatFailure(message: message, for: node.id, markOffline: false)
+            } else {
+                applyHeartbeatFailure(message: message, for: node.id, markOffline: true)
+            }
         }
     }
 
@@ -2679,6 +3964,7 @@ final class ConsoleStore: ObservableObject {
                         to: &updatedNode
                     )
                     nodes[nodeIndex] = updatedNode
+                    persistLiveNodes()
                 }
 
                 skillWorkspaceMode = .local
@@ -4050,6 +5336,7 @@ final class ConsoleStore: ObservableObject {
             to: &node
         )
         nodes[nodeIndex] = node
+        persistLiveNodes()
     }
 
     private func applyRemoteMutationToLocalSkills(
@@ -4088,6 +5375,7 @@ final class ConsoleStore: ObservableObject {
             to: &node
         )
         nodes[nodeIndex] = node
+        persistLiveNodes()
     }
 
     private func applySkillMutationFailure(
@@ -4117,6 +5405,7 @@ final class ConsoleStore: ObservableObject {
             to: &node
         )
         nodes[nodeIndex] = node
+        persistLiveNodes()
     }
 
     private func applyHelloResponse(_ response: EvoMapHelloResponse, draft: NodeConnectionDraft) {
@@ -4161,7 +5450,6 @@ final class ConsoleStore: ObservableObject {
         node.geneCount = draft.geneCount
         node.capsuleCount = draft.capsuleCount
         node.isSampleData = false
-        node.heartbeat = node.claimState == .pending ? .warning : .healthy
         node.lastSeen = Date()
         node.creditBalance = response.creditBalance ?? node.creditBalance
         node.claimCode = response.claimCode
@@ -4171,9 +5459,14 @@ final class ConsoleStore: ObservableObject {
         node.nodeSecretStored = secretSaved || hasStoredSecret(for: senderID)
         node.recommendedHeartbeatIntervalMS = response.heartbeatIntervalMS
         node.heartbeatEndpoint = response.heartbeatEndpoint
-        if response.claimURL != nil || response.claimCode != nil {
-            node.claimState = node.claimState == .claimed ? .claimed : .pending
-        }
+        node.claimState = Self.resolvedClaimState(
+            claimed: response.claimed,
+            stateValues: [response.claimState, response.claimStatus, response.bindingStatus],
+            claimedAt: response.claimedAt,
+            hasClaimLink: response.claimURL?.nonEmpty != nil || response.claimCode?.nonEmpty != nil,
+            current: node.claimState
+        )
+        node.heartbeat = makeHeartbeatState(for: node.claimState, snapshot: node.heartbeatSnapshot ?? .empty)
         node.notes = makeHelloNotes(for: node, response: response)
 
         prependEvents(
@@ -4217,6 +5510,13 @@ final class ConsoleStore: ObservableObject {
         node.survivalStatus = response.survivalStatus ?? node.survivalStatus
         node.heartbeatSnapshot = snapshot
         node.lastErrorMessage = nil
+        node.claimState = Self.resolvedClaimState(
+            claimed: response.claimed,
+            stateValues: [response.claimState, response.claimStatus, response.bindingStatus],
+            claimedAt: response.claimedAt,
+            hasClaimLink: node.claimURL?.nonEmpty != nil || node.claimCode?.nonEmpty != nil,
+            current: node.claimState
+        )
         node.heartbeat = makeHeartbeatState(for: node.claimState, snapshot: snapshot)
         node.notes = makeHeartbeatNotes(for: node, snapshot: snapshot)
         if snapshot.accountability?.quarantineStrikes ?? 0 > 0 {
@@ -4251,6 +5551,7 @@ final class ConsoleStore: ObservableObject {
 
         prependEvents(newEvents, to: &node)
         nodes[index] = node
+        persistLiveNodes()
     }
 
     private func applyHeartbeatFailure(message: String, for nodeID: NodeRecord.ID, markOffline: Bool) {
@@ -4277,6 +5578,64 @@ final class ConsoleStore: ObservableObject {
         )
 
         nodes[index] = node
+        persistLiveNodes()
+    }
+
+    private func applyHeartbeatNotice(message: String, for nodeID: NodeRecord.ID) {
+        guard let index = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+
+        var node = nodes[index]
+        node.lastErrorMessage = message
+        node.notes = message
+
+        let shouldAppendEvent = node.recentEvents.first?.title != "Heartbeat skipped"
+            || Date().timeIntervalSince(node.recentEvents.first?.timestamp ?? .distantPast) > 30
+        if shouldAppendEvent {
+            prependEvents(
+                [
+                    NodeEvent(
+                        timestamp: Date(),
+                        title: "Heartbeat skipped",
+                        detail: message
+                    )
+                ],
+                to: &node
+            )
+        }
+
+        nodes[index] = node
+        persistLiveNodes()
+    }
+
+    private static func heartbeatFailureMessage(_ error: Error) -> String {
+        if isRateLimitError(error) {
+            return AppLocalization.string(
+                "node.heartbeat.error.rate_limited",
+                fallback: "EvoMap is rate-limiting heartbeat requests. Wait a minute or two before refreshing again."
+            )
+        }
+        return error.localizedDescription
+    }
+
+    private static func bountyClaimFailureMessage(_ error: Error) -> String {
+        if case EvoMapClientError.httpStatus(let status, let message) = error {
+            let normalized = message.lowercased()
+            if status == 403 && normalized.contains("insufficient_reputation") {
+                return AppLocalization.string(
+                    "credits.bounty.error.insufficient_reputation",
+                    fallback: "HTTP 403: This node's reputation is not high enough for the selected bounty. EvoMap docs gate bounty claims by reputation: >=20 for 1+ credits, >=40 for 5+ credits, and >=65 for 10+ credits. Track it for later or choose an easier task."
+                )
+            }
+        }
+        return error.localizedDescription
+    }
+
+    private static func isRateLimitError(_ error: Error) -> Bool {
+        if case EvoMapClientError.httpStatus(let status, _) = error, status == 429 {
+            return true
+        }
+        let message = error.localizedDescription.lowercased()
+        return message.contains("429") || message.contains("rate_limited") || message.contains("rate limited")
     }
 
     private func makeHeartbeatSnapshot(from response: EvoMapHeartbeatResponse, refreshedAt: Date) -> NodeHeartbeatSnapshot {
@@ -4309,10 +5668,53 @@ final class ConsoleStore: ObservableObject {
         return .warning
     }
 
+    private static func resolvedClaimState(
+        claimed: Bool?,
+        stateValues: [String?],
+        claimedAt: String?,
+        hasClaimLink: Bool,
+        current: NodeClaimState
+    ) -> NodeClaimState {
+        if claimed == true || claimedAt?.nonEmpty != nil {
+            return .claimed
+        }
+        if let claimed, claimed == false {
+            return hasClaimLink ? .pending : .unclaimed
+        }
+
+        for value in stateValues.compactMap({ $0?.nonEmpty }) {
+            switch normalizedClaimStatus(value) {
+            case "claimed", "bound", "verified", "confirmed", "complete", "completed", "active", "success", "succeeded", "ok":
+                return .claimed
+            case "pending", "waiting", "claim_pending", "needs_claim", "requires_claim", "unverified":
+                return .pending
+            case "unclaimed", "not_claimed", "unbound", "none", "missing":
+                return hasClaimLink ? .pending : .unclaimed
+            default:
+                continue
+            }
+        }
+
+        if current == .claimed {
+            return .claimed
+        }
+        return hasClaimLink ? .pending : .unclaimed
+    }
+
+    private static func normalizedClaimStatus(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+    }
+
     private func makeHelloNotes(for node: NodeRecord, response: EvoMapHelloResponse) -> String {
         var parts = ["Model: \(node.modelName)."]
         parts.append(node.nodeSecretStored ? "Bearer auth is stored in Keychain." : "Save the returned node_secret locally before sending heartbeat.")
-        if let claimURL = response.claimURL, !claimURL.isEmpty {
+        if node.claimState == .claimed {
+            parts.append("Claim is marked complete for this node.")
+        } else if let claimURL = response.claimURL, !claimURL.isEmpty {
             parts.append("Claim this node in the browser to bind it to your EvoMap account.")
         } else {
             parts.append("Node is ready for authenticated follow-up requests.")
@@ -4328,6 +5730,11 @@ final class ConsoleStore: ObservableObject {
 
     private func makeHeartbeatNotes(for node: NodeRecord, snapshot: NodeHeartbeatSnapshot) -> String {
         var parts = ["Authenticated heartbeat is synced through `/a2a/heartbeat` using the Keychain-backed node_secret."]
+        if node.claimState == .pending {
+            parts.append("If the EvoMap claim page already showed success, mark this node as claimed locally; the public heartbeat docs do not expose a stable claim-state field yet.")
+        } else if node.claimState == .claimed {
+            parts.append("Claim is marked complete for this node.")
+        }
         if let nextHeartbeatAt = snapshot.nextHeartbeatAt {
             parts.append("Next heartbeat target is \(Self.relativeLabel(for: nextHeartbeatAt)).")
         }
@@ -4382,6 +5789,9 @@ final class ConsoleStore: ObservableObject {
             var node = node
             node.nodeSecretStored = hasStoredSecret(for: node.senderID)
             return node
+        }
+        if nodes.contains(where: { $0.isSampleData == false }) {
+            persistLiveNodes()
         }
     }
 
@@ -4524,6 +5934,38 @@ final class ConsoleStore: ObservableObject {
         } catch {
             orderLoadErrorMessage = error.localizedDescription
         }
+    }
+
+    private func persistLiveNodes() {
+        do {
+            try nodeWorkspaceStore.saveNodes(nodes.filter { $0.isSampleData == false })
+        } catch {
+            nodeConnectionErrorMessage = error.localizedDescription
+        }
+    }
+
+    private static func loadFollowedBountyTaskIDs() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: followedBountyTaskIDsKey) ?? [])
+    }
+
+    private func persistFollowedBountyTaskIDs() {
+        UserDefaults.standard.set(
+            Array(followedBountyTaskIDs).sorted(),
+            forKey: Self.followedBountyTaskIDsKey
+        )
+    }
+
+    private static func loadBountyAnswerDrafts() -> [String: BountyAnswerDraft] {
+        guard let data = UserDefaults.standard.data(forKey: bountyAnswerDraftsKey),
+              let drafts = try? JSONDecoder().decode([String: BountyAnswerDraft].self, from: data) else {
+            return [:]
+        }
+        return drafts
+    }
+
+    private static func saveBountyAnswerDrafts(_ drafts: [String: BountyAnswerDraft]) {
+        guard let data = try? JSONEncoder().encode(drafts) else { return }
+        UserDefaults.standard.set(data, forKey: bountyAnswerDraftsKey)
     }
 
     private func orderAcceptanceKey(taskID: String, submissionID: String) -> String {
@@ -5120,6 +6562,21 @@ private enum SampleData {
             isSampleData: true
         ),
     ]
+}
+
+private extension NodeHeartbeatSnapshot {
+    static var empty: NodeHeartbeatSnapshot {
+        NodeHeartbeatSnapshot(
+            nextHeartbeatAt: nil,
+            availableTasks: [],
+            availableWork: [],
+            overdueTasks: [],
+            pendingEvents: [],
+            peers: [],
+            accountability: nil,
+            skillStore: nil
+        )
+    }
 }
 
 private extension String {

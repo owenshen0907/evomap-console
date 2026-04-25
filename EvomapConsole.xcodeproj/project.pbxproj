@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A11E8D1F2B3C4D5E6F708091 /* NodeWorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21E8D1F2B3C4D5E6F708092 /* NodeWorkspaceStore.swift */; };
 		046A49B34FBEB3BB5A7EA0D1 /* KnowledgeGraphAPIKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352CB7C33EFDD95548371351 /* KnowledgeGraphAPIKeyStore.swift */; };
 		070E68A253A977B96E3BAE2D /* ConsoleSettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26D000928D18712DBDABED29 /* ConsoleSettingsViewModel.swift */; };
 		0B76737E8582BDA5AF481CEA /* SkillImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5756DDBF3E1E99C952AFAF9 /* SkillImportService.swift */; };
@@ -29,6 +30,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A21E8D1F2B3C4D5E6F708092 /* NodeWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeWorkspaceStore.swift; sourceTree = "<group>"; };
 		1A4D7C26F88DF1B8E1D1D597 /* SkillWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillWorkspaceStore.swift; sourceTree = "<group>"; };
 		26D000928D18712DBDABED29 /* ConsoleSettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleSettingsViewModel.swift; sourceTree = "<group>"; };
 		2A5BEE86BDF51551AE285C61 /* AppBuildMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBuildMetadata.swift; sourceTree = "<group>"; };
@@ -90,6 +92,7 @@
 				352CB7C33EFDD95548371351 /* KnowledgeGraphAPIKeyStore.swift */,
 				AB9E67A9C547FB28C60B9E7A /* NodeConnectionSheet.swift */,
 				C49A97FD85D4A02CA3432FD2 /* NodeSecretStore.swift */,
+				A21E8D1F2B3C4D5E6F708092 /* NodeWorkspaceStore.swift */,
 				CF0A5479B5ACE96A60D298D4 /* OrderWorkspaceStore.swift */,
 				B5756DDBF3E1E99C952AFAF9 /* SkillImportService.swift */,
 				1A4D7C26F88DF1B8E1D1D597 /* SkillWorkspaceStore.swift */,
@@ -182,6 +185,7 @@
 				046A49B34FBEB3BB5A7EA0D1 /* KnowledgeGraphAPIKeyStore.swift in Sources */,
 				6C2D337B6C5BA372225BC45D /* NodeConnectionSheet.swift in Sources */,
 				7FF94DCEC8216E45354A0F63 /* NodeSecretStore.swift in Sources */,
+				A11E8D1F2B3C4D5E6F708091 /* NodeWorkspaceStore.swift in Sources */,
 				F1E8D6962EFB6F862A432358 /* OrderWorkspaceStore.swift in Sources */,
 				0B76737E8582BDA5AF481CEA /* SkillImportService.swift in Sources */,
 				E9C9A308794DE775D449D4A5 /* SkillWorkspaceStore.swift in Sources */,
@@ -211,7 +215,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = App/Info.plist;
 				MARKETING_VERSION = 0.1.0;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 16;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.evomapconsole.app;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -291,7 +295,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = App/Info.plist;
 				MARKETING_VERSION = 0.1.0;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 16;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.evomapconsole.app;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

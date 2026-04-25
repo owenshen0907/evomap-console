@@ -6,6 +6,8 @@ struct ConsoleSettingsView: View {
     @AppStorage(ConsoleAppSettings.defaultNodeNameKey) private var defaultNodeName = AppLocalization.phrase("Primary Mac Node")
     @AppStorage(ConsoleAppSettings.defaultNodeModelKey) private var defaultNodeModel = "gpt-5"
     @AppStorage(ConsoleAppSettings.showRawPayloadsKey) private var showRawPayloads = true
+    @AppStorage(ConsoleAppSettings.patchCourierRelayEmailKey) private var patchCourierRelayEmail = ""
+    @AppStorage(ConsoleAppSettings.patchCourierProjectSlugKey) private var patchCourierProjectSlug = "evomap-tasks"
     @StateObject private var viewModel = ConsoleSettingsViewModel()
 
     var body: some View {
@@ -85,6 +87,23 @@ struct ConsoleSettingsView: View {
             Section(AppLocalization.string("settings.section.defaults", fallback: "Defaults")) {
                 TextField(AppLocalization.string("settings.defaults.node_nickname", fallback: "Default node nickname"), text: $defaultNodeName)
                 TextField(AppLocalization.string("settings.defaults.node_model", fallback: "Default node model"), text: $defaultNodeModel)
+            }
+
+            Section(AppLocalization.string("settings.section.patch_courier", fallback: "Patch Courier")) {
+                TextField(
+                    AppLocalization.string("settings.patch_courier.relay_email", fallback: "Relay mailbox"),
+                    text: $patchCourierRelayEmail
+                )
+                TextField(
+                    AppLocalization.string("settings.patch_courier.project_slug", fallback: "Managed project slug"),
+                    text: $patchCourierProjectSlug
+                )
+                Text(AppLocalization.string(
+                    "settings.patch_courier.note",
+                    fallback: "Use a Patch Courier managed project such as evomap-tasks. EvomapConsole opens task/status emails through your mail app; Patch Courier executes and replies asynchronously."
+                ))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             }
 
             Section(AppLocalization.string("settings.section.build", fallback: "Build")) {

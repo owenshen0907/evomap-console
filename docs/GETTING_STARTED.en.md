@@ -1,6 +1,6 @@
 # EvoMap Console User Guide
 
-Last updated: 2026-04-25 09:07 JST
+Last updated: 2026-04-25 12:51 JST
 
 This guide explains EvoMap Console by real operating scenarios. The goal is not to describe every button, but to make the mechanism clear: nodes, accounts, credits, tasks, Skills, services, and orders.
 
@@ -88,22 +88,51 @@ Goal: use a real node to find bounty work, claim one task, complete it, and wait
 ### Steps
 
 1. Connect and claim a real node.
-2. Open `Credits`.
-3. Refresh bounty tasks.
+2. Open `Bounties`.
+3. Refresh bounty tasks; if you already claimed one, refresh `My claimed tasks`.
 4. Select a task you are sure you can complete.
 5. Claim it.
-6. Submit the answer or deliverable through the official task flow.
-7. Wait for official acceptance before expecting the credits to settle.
+6. In `Implementation and submission`, generate the submission structure.
+7. Rewrite `Final answer` so it is the actual answer for the task owner.
+8. Save the draft; when ready, click `Publish Capsule and complete`.
+9. Wait for official acceptance before expecting the credits to settle.
 
 ### What the current app supports
 
-- Calls `/a2a/task/list?min_bounty=1` with your `node_secret`.
-- Calls `/a2a/task/claim` for the selected bounty.
+- Loads many bounty tasks from the public bounty board and tracks them in the dedicated `Bounties` page.
+- Reads `reputation_score` from the public node profile endpoint `/a2a/nodes/{node_id}` and applies the official default claim gates: 1+ credits requires reputation >= 20, 5+ credits requires reputation >= 40, and 10+ credits requires reputation >= 65.
+- Resolves `task_id` from `bounty_id`, then calls `/a2a/task/claim` for the selected bounty.
+- Loads claimed tasks through `/a2a/task/my?node_id=...` and shows `my_submission_id` plus `my_submission_status`.
+- Saves local implementation notes, final answer, and verification notes per bounty.
+- Builds an official Gene + Capsule bundle, publishes it through `/a2a/publish`, then completes the task through `/a2a/task/complete` with the Capsule `asset_id`.
 - Separates visible balance, node-returned balance, target amount, and remaining gap so you do not mistake a goal for a real balance.
 
-### What is not fully closed yet
+### Choosing an executor
 
-The current version does not expose a complete UI for `/a2a/task/complete`. The answer/submission step still needs to follow EvoMap's official task flow or a later app release. Do not claim tasks you cannot complete; it may affect node reputation.
+- Use `Codex CLI` by default: it is installed locally, can use your Codex skills, and is well suited to turning an EvoMap bounty into a reviewable answer draft.
+- Use `Claude Code` for code-heavy work or as a second-agent comparison; it should generate the answer, not submit it.
+- Do not make `Direct model` the default yet. It is better for future text-only batch automation, but it needs API-key handling, spend limits, skill runtime control, logging, and retries first.
+- The app now generates an execution brief and CLI command. Run it in Terminal, paste the output into `Final answer`, then manually click `Publish Capsule and complete`.
+
+### Async execution through Patch Courier
+
+Use the mail handoff if you do not want EvomapConsole to run Codex directly, or if Patch Courier is on another machine:
+
+1. In Patch Courier, create a managed project named `EvoMap Tasks`, with slug `evomap-tasks`, and point its root to a dedicated task workspace.
+2. In Patch Courier sender policies, allowlist your sending mailbox and allow that workspace; disable first-mail reply token only for this dedicated sender.
+3. In EvomapConsole, set `Settings -> Patch Courier` relay mailbox and project slug.
+4. In `Bounties`, claim the task first, then click `Send to Patch Courier`. Your mail app opens an `EVOMAP_EXECUTE` email; send it manually.
+5. Patch Courier runs Codex in the managed workspace and replies with a structured result. Paste `FINAL_ANSWER_MARKDOWN` into EvomapConsole `Final answer`.
+6. If you need a status check, click `Query status by email` and send the generated `EVOMAP_STATUS` email.
+
+This path only produces an answer draft. Patch Courier is explicitly instructed not to call EvoMap publish, complete, claim, or settlement APIs. Final submission still happens manually in EvomapConsole.
+
+### Before submitting
+
+- The final answer must not remain a template; it must directly answer the task.
+- Do not include API keys, node_secret values, private paths, or local-only screenshot paths.
+- If the task asks for code or files, explain the structure, core implementation, validation method, and boundaries.
+- After `Publish Capsule and complete`, watch `my_submission_status` and official acceptance state; credits do not settle at claim time.
 
 ### Good task types for your Japanese data
 

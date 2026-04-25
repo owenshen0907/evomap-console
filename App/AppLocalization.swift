@@ -119,6 +119,22 @@ enum AppLocalization {
         }
     }
 
+    static func bountyText(_ text: String) -> String {
+        localizedBountyText(text, target: resolvedDisplayLanguage)
+    }
+
+    static func bountyTerm(_ text: String?) -> String? {
+        guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              text.isEmpty == false else {
+            return nil
+        }
+        return localizedBountyToken(text, target: resolvedDisplayLanguage)
+    }
+
+    static func hasBountyTranslation(for text: String) -> Bool {
+        bountyText(text) != text
+    }
+
     private static func bundle(for language: ConsoleLanguage) -> Bundle {
         guard let localizationCode = language.localizationCode,
               let path = Bundle.main.path(forResource: localizationCode, ofType: "lproj"),
@@ -127,6 +143,153 @@ enum AppLocalization {
         }
         return bundle
     }
+
+    private static var resolvedDisplayLanguage: ConsoleLanguage {
+        switch ConsoleAppSettings.appLanguage {
+        case .system:
+            let preferred = Locale.preferredLanguages.first ?? Locale.current.identifier
+            if preferred.hasPrefix("zh") {
+                return .chineseSimplified
+            }
+            if preferred.hasPrefix("ja") {
+                return .japanese
+            }
+            return .english
+        case .english, .chineseSimplified, .japanese:
+            return ConsoleAppSettings.appLanguage
+        }
+    }
+
+    private static func localizedBountyText(_ text: String, target: ConsoleLanguage) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false, target != .english else {
+            return text
+        }
+
+        if let terms = bountyKnowledgeTerms(from: trimmed) {
+            let prefix = target == .japanese ? "必要な知識：" : "需要知识："
+            let separator = target == .japanese ? "、" : "、"
+            let localizedTerms = terms.map { localizedBountyToken($0, target: target) }
+            return prefix + localizedTerms.joined(separator: separator)
+        }
+
+        return localizedBountyToken(trimmed, target: target)
+    }
+
+    private static func bountyKnowledgeTerms(from text: String) -> [String]? {
+        let lowercased = text.lowercased()
+        let prefixes = ["knowledge needed:", "knowledge needed："]
+        guard let prefix = prefixes.first(where: { lowercased.hasPrefix($0) }) else {
+            return nil
+        }
+
+        return text
+            .dropFirst(prefix.count)
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.isEmpty == false }
+    }
+
+    private static func localizedBountyToken(_ text: String, target: ConsoleLanguage) -> String {
+        guard target != .english else {
+            return text
+        }
+
+        let dictionary = target == .japanese ? jaBountyTerms : zhHansBountyTerms
+        let normalized = normalizedBountyKey(text)
+        if let exact = dictionary[normalized] {
+            return exact
+        }
+
+        var result = text
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        for (source, translated) in dictionary.sorted(by: { $0.key.count > $1.key.count }) {
+            guard source.contains(" ") else { continue }
+            result = result.replacingOccurrences(of: source, with: translated, options: [.caseInsensitive])
+        }
+        return result
+    }
+
+    private static func normalizedBountyKey(_ text: String) -> String {
+        text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+    }
+
+    private static let zhHansBountyTerms: [String: String] = [
+        "agent": "Agent",
+        "api": "API",
+        "are": "是",
+        "asset": "资产",
+        "beginner friendly": "适合新手",
+        "bounty": "悬赏",
+        "bounty task": "悬赏任务",
+        "capsule": "Capsule",
+        "compatibility": "兼容性",
+        "data": "数据",
+        "data compatibility": "数据兼容性",
+        "external": "外部",
+        "external task": "外部任务",
+        "flink": "Flink",
+        "graph": "图谱",
+        "innovate": "创新",
+        "knowledge": "知识",
+        "matched asset": "匹配资产",
+        "needed": "需要",
+        "open": "开放",
+        "question": "问题",
+        "registry": "注册表",
+        "schema": "Schema",
+        "service": "服务",
+        "skill": "技能",
+        "sql": "SQL",
+        "task": "任务",
+        "trend analysis": "趋势分析",
+        "trends": "趋势",
+        "what": "什么",
+        "workflow": "工作流",
+    ]
+
+    private static let jaBountyTerms: [String: String] = [
+        "agent": "Agent",
+        "api": "API",
+        "are": "は",
+        "asset": "アセット",
+        "beginner friendly": "初心者向け",
+        "bounty": "Bounty",
+        "bounty task": "Bounty タスク",
+        "capsule": "Capsule",
+        "compatibility": "互換性",
+        "data": "データ",
+        "data compatibility": "データ互換性",
+        "external": "外部",
+        "external task": "外部タスク",
+        "flink": "Flink",
+        "graph": "グラフ",
+        "innovate": "革新",
+        "knowledge": "知識",
+        "matched asset": "一致アセット",
+        "needed": "必要",
+        "open": "公開中",
+        "question": "質問",
+        "registry": "レジストリ",
+        "schema": "スキーマ",
+        "service": "サービス",
+        "skill": "スキル",
+        "sql": "SQL",
+        "task": "タスク",
+        "trend analysis": "トレンド分析",
+        "trends": "トレンド",
+        "what": "何",
+        "workflow": "ワークフロー",
+    ]
 
     private static let zhHansPhrases: [String: String] = [
         "Access": "访问",
@@ -591,6 +754,8 @@ enum AppLocalization {
         "Restored Skill": "已恢复技能",
         "Permanently Deleted Skill": "已永久删除技能",
         "Skill publish failed": "技能发布失败",
+        "Claim marked complete": "认领已标记完成",
+        "Browser claim was confirmed by the user in this app.": "用户已在此应用中确认浏览器认领完成。",
         "Hello acknowledged": "Hello 已确认",
         "Heartbeat synced": "心跳已同步",
         "Accountability signal": "责任追踪信号",
@@ -598,9 +763,12 @@ enum AppLocalization {
         "Check the Hub endpoint and your local network.": "请检查 Hub 接口和本地网络。",
         "Store node_secret in Keychain before retrying.": "重试前请先把 node_secret 存入钥匙串。",
         "Heartbeat failed": "心跳失败",
+        "Heartbeat skipped": "心跳已跳过",
         "Bearer auth is stored in Keychain.": "Bearer 认证已保存到钥匙串。",
         "Save the returned node_secret locally before sending heartbeat.": "发送心跳前请先在本地保存返回的 node_secret。",
         "Claim this node in the browser to bind it to your EvoMap account.": "请在浏览器中认领此节点，把它绑定到你的 EvoMap 账号。",
+        "Claim is marked complete for this node.": "此节点已标记为认领完成。",
+        "If the EvoMap claim page already showed success, mark this node as claimed locally; the public heartbeat docs do not expose a stable claim-state field yet.": "如果 EvoMap 认领页已经显示成功，请在本地把此节点标记为已认领；公开 heartbeat 文档目前还没有稳定暴露 claim-state 字段。",
         "Node is ready for authenticated follow-up requests.": "节点已可进行后续认证请求。",
         "Authenticated heartbeat is synced through `/a2a/heartbeat` using the Keychain-backed node_secret.": "已使用钥匙串中的 node_secret 通过 `/a2a/heartbeat` 同步认证心跳。",
         "Unnamed task": "未命名任务",
@@ -1102,6 +1270,8 @@ enum AppLocalization {
         "Restored Skill": "スキルを復元",
         "Permanently Deleted Skill": "スキルを完全削除",
         "Skill publish failed": "スキル公開に失敗",
+        "Claim marked complete": "登録完了としてマーク",
+        "Browser claim was confirmed by the user in this app.": "ユーザーがこのアプリでブラウザ登録の完了を確認しました。",
         "Hello acknowledged": "Hello を確認",
         "Heartbeat synced": "ハートビート同期済み",
         "Accountability signal": "責任管理シグナル",
@@ -1109,9 +1279,12 @@ enum AppLocalization {
         "Check the Hub endpoint and your local network.": "Hub エンドポイントとローカルネットワークを確認してください。",
         "Store node_secret in Keychain before retrying.": "再試行前に node_secret を Keychain に保存してください。",
         "Heartbeat failed": "ハートビート失敗",
+        "Heartbeat skipped": "ハートビートをスキップ",
         "Bearer auth is stored in Keychain.": "Bearer 認証は Keychain に保存済みです。",
         "Save the returned node_secret locally before sending heartbeat.": "ハートビート送信前に返却された node_secret をローカル保存してください。",
         "Claim this node in the browser to bind it to your EvoMap account.": "ブラウザでこのノードを認証し、EvoMap アカウントに紐付けてください。",
+        "Claim is marked complete for this node.": "このノードは登録完了としてマーク済みです。",
+        "If the EvoMap claim page already showed success, mark this node as claimed locally; the public heartbeat docs do not expose a stable claim-state field yet.": "EvoMap の登録ページですでに成功表示が出ている場合は、このノードをローカルで登録済みとしてマークしてください。公開 heartbeat ドキュメントには安定した claim-state フィールドがまだありません。",
         "Node is ready for authenticated follow-up requests.": "ノードは後続の認証リクエストに対応できます。",
         "Authenticated heartbeat is synced through `/a2a/heartbeat` using the Keychain-backed node_secret.": "Keychain の node_secret を使って `/a2a/heartbeat` で認証済みハートビートを同期しました。",
         "Unnamed task": "無名タスク",
