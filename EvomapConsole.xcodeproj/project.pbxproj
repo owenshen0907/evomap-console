@@ -28,6 +28,9 @@
 		E9C9A308794DE775D449D4A5 /* SkillWorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A4D7C26F88DF1B8E1D1D597 /* SkillWorkspaceStore.swift */; };
 		EE8EC984E98FBBDFCE01ED27 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 760E3EC44127BD7433BDD4FE /* ContentView.swift */; };
 		F1E8D6962EFB6F862A432358 /* OrderWorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0A5479B5ACE96A60D298D4 /* OrderWorkspaceStore.swift */; };
+		B02F0000B0CEDA7AF1900001 /* BountyWorkflowModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B01F0000B0CEDA7AF1900001 /* BountyWorkflowModels.swift */; };
+		B04F0000B0CEDA7AF1900002 /* BountyTemplateCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B03F0000B0CEDA7AF1900002 /* BountyTemplateCatalog.swift */; };
+		B06F0000B0CEDA7AF1900003 /* BountyWorkflowEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05F0000B0CEDA7AF1900003 /* BountyWorkflowEngine.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -56,6 +59,9 @@
 		E0DD51636BFDFF83D6ED21EB /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		F85D4CF4DEB8B5F937E914A6 /* AppLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalization.swift; sourceTree = "<group>"; };
 		F960F0B99DE38B2A1C68D9E7 /* ConsoleCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleCommands.swift; sourceTree = "<group>"; };
+		B01F0000B0CEDA7AF1900001 /* BountyWorkflowModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BountyWorkflowModels.swift; sourceTree = "<group>"; };
+		B03F0000B0CEDA7AF1900002 /* BountyTemplateCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BountyTemplateCatalog.swift; sourceTree = "<group>"; };
+		B05F0000B0CEDA7AF1900003 /* BountyWorkflowEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BountyWorkflowEngine.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -81,6 +87,9 @@
 				2A5BEE86BDF51551AE285C61 /* AppBuildMetadata.swift */,
 				F85D4CF4DEB8B5F937E914A6 /* AppLocalization.swift */,
 				CE6C9EAFB88EDD45BF1396D1 /* Assets.xcassets */,
+				B03F0000B0CEDA7AF1900002 /* BountyTemplateCatalog.swift */,
+				B05F0000B0CEDA7AF1900003 /* BountyWorkflowEngine.swift */,
+				B01F0000B0CEDA7AF1900001 /* BountyWorkflowModels.swift */,
 				CCA91F4536AC9B22B8B1AFE3 /* ConsoleAppSettings.swift */,
 				F960F0B99DE38B2A1C68D9E7 /* ConsoleCommands.swift */,
 				4FC1A230AD0CBDA605A8B79C /* ConsoleModels.swift */,
@@ -176,6 +185,9 @@
 			files = (
 				BF661201FDA096397BDBD19C /* AppBuildMetadata.swift in Sources */,
 				75E5950D3EC7D95F1C5E1C6A /* AppLocalization.swift in Sources */,
+				B04F0000B0CEDA7AF1900002 /* BountyTemplateCatalog.swift in Sources */,
+				B06F0000B0CEDA7AF1900003 /* BountyWorkflowEngine.swift in Sources */,
+				B02F0000B0CEDA7AF1900001 /* BountyWorkflowModels.swift in Sources */,
 				DB147954C563B9C12AFEE20B /* ConsoleAppSettings.swift in Sources */,
 				8DC7DF08089A145D8CF40428 /* ConsoleCommands.swift in Sources */,
 				A8BFC24245DE4E531293C675 /* ConsoleModels.swift in Sources */,
@@ -219,7 +231,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = App/Info.plist;
 				MARKETING_VERSION = 0.1.0;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 23;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.evomapconsole.app;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -299,7 +311,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = App/Info.plist;
 				MARKETING_VERSION = 0.1.0;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 23;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.evomapconsole.app;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

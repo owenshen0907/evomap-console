@@ -1554,110 +1554,54 @@ private struct CreditsDetailView: View {
 
 private struct BountyTasksListView: View {
     @ObservedObject var store: ConsoleStore
+    @State private var filter: BountyListFilter = .claimable
 
     var body: some View {
         List {
-            Section(AppLocalization.string("bounties.section.tracker", fallback: "Tracker")) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(AppLocalization.string("bounties.title", fallback: "Bounty Tracker"), systemImage: "target")
-                        .font(.headline)
-                    Text(store.bountyTaskLoadedCountLine)
-                        .foregroundStyle(.secondary)
-                    Text(store.claimedBountyTaskCountLine)
-                        .foregroundStyle(.secondary)
-                    Text(AppLocalization.string("bounties.list.sort_hint", fallback: "Sorted by claimable tasks first, then higher credits."))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    if store.bountyShowsAllLoadedTasks == false {
-                        Text(AppLocalization.string(
-                            "bounties.list.default_filter_note",
-                            fallback: "Default view shows only claimable tasks for the selected node. Hidden: %d.",
-                            store.hiddenBountyTaskCount
-                        ))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    }
-                    if let error = store.bountyTaskErrorMessage {
-                        Text(error)
-                            .foregroundStyle(.red)
+            Section {
+                BountyAutopilotStatusHeader(store: store)
+                    .padding(.vertical, 4)
+
+                Picker("", selection: $filter) {
+                    ForEach(BountyListFilter.allCases) { f in
+                        Text(f.title).tag(f)
                     }
                 }
-                .padding(.vertical, 4)
-
-                Toggle(
-                    AppLocalization.string("bounties.action.show_all_loaded", fallback: "Show all loaded tasks"),
-                    isOn: $store.bountyShowsAllLoadedTasks
-                )
-                .toggleStyle(.switch)
-
-                Button {
-                    Task {
-                        await store.refreshBountyTasks()
-                    }
-                } label: {
-                    Label(AppLocalization.string("credits.action.refresh_bounties", fallback: "Refresh bounties"), systemImage: "arrow.clockwise")
-                }
-                .disabled(store.isLoadingBountyTasks || store.selectedOrFirstCreditNode == nil)
-
-                Button {
-                    Task {
-                        await store.refreshClaimedBountyTasks()
-                    }
-                } label: {
-                    Label(
-                        store.isLoadingClaimedBountyTasks
-                            ? AppLocalization.string("bounties.action.refreshing_claimed", fallback: "Refreshing claimed tasks")
-                            : AppLocalization.string("bounties.action.refresh_claimed", fallback: "Refresh my claimed tasks"),
-                        systemImage: "tray.and.arrow.down"
-                    )
-                }
-                .disabled(store.isLoadingClaimedBountyTasks || store.selectedOrFirstCreditNode == nil)
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
 
-            if store.claimedBountyDisplayTasks.isEmpty == false {
-                Section(AppLocalization.string("bounties.section.claimed", fallback: "My claimed tasks")) {
-                    ForEach(store.claimedBountyDisplayTasks) { task in
-                        bountyTaskButton(task)
+            if filter == .claimable && store.bountyAutopilotCandidates.isEmpty == false {
+                Section(AppLocalization.string("bounties.section.top_candidates", fallback: "Top candidates")) {
+                    ForEach(Array(store.bountyAutopilotCandidates.prefix(3))) { candidate in
+                        Button {
+                            store.selectedBountyTaskID = candidate.task.id
+                        } label: {
+                            BountyAutopilotCandidateRow(candidate: candidate)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
 
-            if store.followedBountyTasks.isEmpty == false {
-                Section(AppLocalization.string("bounties.section.following", fallback: "Following")) {
-                    ForEach(store.followedBountyTasks) { task in
-                        bountyTaskButton(task)
-                    }
-                }
-            }
-
-            Section(
-                store.bountyShowsAllLoadedTasks
-                    ? AppLocalization.string("bounties.section.all", fallback: "All loaded tasks")
-                    : AppLocalization.string("bounties.section.claimable", fallback: "Claimable for selected node")
-            ) {
-                if let blocker = store.bountyTaskPrerequisiteBlocker {
-                    Text(blocker)
-                        .foregroundStyle(.secondary)
+            Section(filter.sectionTitle) {
+                if filter == .claimable, let blocker = store.bountyTaskPrerequisiteBlocker {
+                    Text(blocker).foregroundStyle(.secondary)
                 }
 
-                if store.visibleBountyTasks.isEmpty {
-                    Text(
-                        store.bountyShowsAllLoadedTasks
-                            ? AppLocalization.string("credits.bounty.empty", fallback: "No bounty tasks loaded yet. Refresh after the node is connected and claimed.")
-                            : AppLocalization.string("bounties.empty.no_claimable", fallback: "No claimable tasks for the selected node in the loaded page. Show all loaded tasks or load more.")
-                    )
+                let tasksForFilter = filter.tasks(store: store)
+                if tasksForFilter.isEmpty {
+                    Text(filter.emptyMessage(store: store))
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(store.visibleBountyTasks) { task in
+                    ForEach(tasksForFilter) { task in
                         bountyTaskButton(task)
                     }
                 }
 
-                if store.hasMoreBountyTasks {
+                if (filter == .claimable || filter == .all) && store.hasMoreBountyTasks {
                     Button {
-                        Task {
-                            await store.loadMoreBountyTasks()
-                        }
+                        Task { await store.loadMoreBountyTasks() }
                     } label: {
                         Label(
                             store.isLoadingBountyTasks
@@ -1667,6 +1611,65 @@ private struct BountyTasksListView: View {
                         )
                     }
                     .disabled(store.isLoadingBountyTasks)
+                }
+            }
+
+            Section(AppLocalization.string("bounties.section.tracker", fallback: "Tracker")) {
+                Toggle(
+                    AppLocalization.string("bounties.action.show_all_loaded", fallback: "Show all loaded tasks"),
+                    isOn: $store.bountyShowsAllLoadedTasks
+                )
+                .toggleStyle(.switch)
+
+                Button {
+                    Task { await store.refreshBountyTasks() }
+                } label: {
+                    Label(AppLocalization.string("credits.action.refresh_bounties", fallback: "Refresh bounties"), systemImage: "arrow.clockwise")
+                }
+                .disabled(store.isLoadingBountyTasks || store.selectedOrFirstCreditNode == nil)
+
+                Button {
+                    Task { await store.refreshClaimedBountyTasks() }
+                } label: {
+                    Label(
+                        store.isLoadingClaimedBountyTasks
+                            ? AppLocalization.string("bounties.action.refreshing_claimed", fallback: "Refreshing claimed tasks")
+                            : AppLocalization.string("bounties.action.refresh_claimed", fallback: "Refresh my claimed tasks"),
+                        systemImage: "tray.and.arrow.down"
+                    )
+                }
+                .disabled(store.isLoadingClaimedBountyTasks || store.selectedOrFirstCreditNode == nil)
+
+                Button {
+                    Task { await store.importOpenClawBountyHistory() }
+                } label: {
+                    Label(
+                        store.isImportingBountyAutopilotHistory
+                            ? AppLocalization.string("bounties.autopilot.importing", fallback: "Importing OpenClaw history")
+                            : AppLocalization.string("bounties.autopilot.import", fallback: "Import OpenClaw history"),
+                        systemImage: "tray.and.arrow.down.fill"
+                    )
+                }
+                .disabled(store.isImportingBountyAutopilotHistory)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(store.bountyTaskLoadedCountLine)
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Text(store.claimedBountyTaskCountLine)
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Text(AppLocalization.string("bounties.list.sort_hint", fallback: "Sorted by claimable tasks first, then higher credits."))
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if store.bountyShowsAllLoadedTasks == false {
+                        Text(AppLocalization.string(
+                            "bounties.list.default_filter_note",
+                            fallback: "Default view shows only claimable tasks for the selected node. Hidden: %d.",
+                            store.hiddenBountyTaskCount
+                        ))
+                        .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if let error = store.bountyTaskErrorMessage {
+                        Text(error).font(.footnote).foregroundStyle(.red)
+                    }
                 }
             }
         }
@@ -1701,111 +1704,319 @@ private struct BountyTasksListView: View {
     }
 }
 
-private struct BountyTaskDetailView: View {
+private struct BountyAutopilotCandidateRow: View {
+    let candidate: BountyAutopilotCandidate
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(AppLocalization.bountyText(candidate.task.title))
+                    .font(.headline)
+                    .lineLimit(2)
+                Spacer()
+                BadgeLabel(
+                    text: AppLocalization.string("bounties.autopilot.score", fallback: "Score %d", candidate.score),
+                    tintName: candidate.score > 70 ? "green" : "blue"
+                )
+            }
+
+            HStack(spacing: 8) {
+                if let credits = candidate.task.displayCredits {
+                    BadgeLabel(text: AppLocalization.string("credits.unit.count", fallback: "%d credits", credits), tintName: "green")
+                }
+                if let status = AppLocalization.bountyTerm(candidate.task.status) ?? candidate.task.status {
+                    BadgeLabel(text: status, tintName: "secondary")
+                }
+            }
+
+            if candidate.reasons.isEmpty == false {
+                Text(candidate.reasons.joined(separator: " · "))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            if candidate.risks.isEmpty == false {
+                Text(candidate.risks.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct BountyAutopilotRunRow: View {
+    let run: BountyAutopilotRun
+    let isSelected: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(run.title)
+                    .font(.headline)
+                    .lineLimit(2)
+                Spacer()
+                BadgeLabel(text: run.status.title, tintName: run.status.tintName)
+            }
+
+            HStack(spacing: 8) {
+                if let reward = run.rewardCredits {
+                    BadgeLabel(text: AppLocalization.string("credits.unit.count", fallback: "%d credits", reward), tintName: "green")
+                }
+                Text(run.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 6)
+        .background(isSelected ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+private enum BountyDetailTab: String, CaseIterable, Identifiable {
+    case task, execute, audit
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .task:
+            return AppLocalization.string("bounties.detail.tab.task", fallback: "Task")
+        case .execute:
+            return AppLocalization.string("bounties.detail.tab.execute", fallback: "Execute")
+        case .audit:
+            return AppLocalization.string("bounties.detail.tab.audit", fallback: "Audit")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .task:
+            return "doc.text"
+        case .execute:
+            return "bolt.fill"
+        case .audit:
+            return "list.clipboard"
+        }
+    }
+}
+
+private enum BountyListFilter: String, CaseIterable, Identifiable {
+    case claimable, following, claimed, all
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .claimable:
+            return AppLocalization.string("bounties.list.filter.claimable", fallback: "Claimable")
+        case .following:
+            return AppLocalization.string("bounties.list.filter.following", fallback: "Following")
+        case .claimed:
+            return AppLocalization.string("bounties.list.filter.claimed", fallback: "Claimed")
+        case .all:
+            return AppLocalization.string("bounties.list.filter.all", fallback: "All loaded")
+        }
+    }
+
+    var sectionTitle: String {
+        switch self {
+        case .claimable:
+            return AppLocalization.string("bounties.section.claimable", fallback: "Claimable for selected node")
+        case .following:
+            return AppLocalization.string("bounties.section.following", fallback: "Following")
+        case .claimed:
+            return AppLocalization.string("bounties.section.claimed", fallback: "My claimed tasks")
+        case .all:
+            return AppLocalization.string("bounties.section.all", fallback: "All loaded tasks")
+        }
+    }
+
+    @MainActor
+    func tasks(store: ConsoleStore) -> [EvoMapBountyTask] {
+        switch self {
+        case .claimable:
+            return store.visibleBountyTasks
+        case .following:
+            return store.followedBountyTasks
+        case .claimed:
+            return store.claimedBountyDisplayTasks
+        case .all:
+            return store.bountyTasks
+        }
+    }
+
+    func emptyMessage(store: ConsoleStore) -> String {
+        switch self {
+        case .claimable:
+            return AppLocalization.string("bounties.empty.no_claimable", fallback: "No claimable tasks for the selected node in the loaded page. Show all loaded tasks or load more.")
+        case .following:
+            return AppLocalization.string("bounties.empty.no_following", fallback: "Not following any bounty yet. Bookmark tasks from Claimable or All loaded.")
+        case .claimed:
+            return AppLocalization.string("bounties.empty.no_claimed", fallback: "No claimed bounties yet. Refresh after the node has claimed work.")
+        case .all:
+            return AppLocalization.string("credits.bounty.empty", fallback: "No bounty tasks loaded yet. Refresh after the node is connected and claimed.")
+        }
+    }
+}
+
+private struct BountyAutopilotStatusHeader: View {
     @ObservedObject var store: ConsoleStore
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Label(
+                    AppLocalization.string("bounties.autopilot.title", fallback: "Autopilot Cockpit"),
+                    systemImage: "point.topleft.down.curvedto.point.bottomright.up"
+                )
+                .font(.subheadline.weight(.semibold))
+                Spacer()
+                if let run = store.latestBountyAutopilotRun {
+                    BadgeLabel(text: run.status.title, tintName: run.status.tintName)
+                }
+            }
+
+            Text(store.bountyAutopilotStatusLine)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+            HStack(spacing: 8) {
+                if store.isRunningBountyAutopilot {
+                    Button(role: .destructive) {
+                        store.cancelBountyAutopilot()
+                    } label: {
+                        Label(
+                            store.isCancellingBountyAutopilot
+                                ? AppLocalization.string("bounties.autopilot.cancelling_short", fallback: "Cancelling…")
+                                : AppLocalization.string("bounties.autopilot.cancel", fallback: "Cancel run"),
+                            systemImage: "stop.fill"
+                        )
+                        .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(store.isCancellingBountyAutopilot)
+                } else {
+                    Button {
+                        store.startBountyAutopilot()
+                    } label: {
+                        Label(
+                            AppLocalization.string("bounties.autopilot.start", fallback: "Run next bounty automatically"),
+                            systemImage: "play.fill"
+                        )
+                        .font(.caption)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(store.selectedOrFirstCreditNode == nil)
+                }
+
+                Toggle(
+                    AppLocalization.string("bounties.autopilot.auto_submit_short", fallback: "Auto-submit"),
+                    isOn: $store.bountyAutopilotAutoSubmit
+                )
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
+                Toggle(
+                    AppLocalization.string("bounties.autopilot.use_native_short", fallback: "Native engine"),
+                    isOn: $store.bountyAutopilotUseNativeEngine
+                )
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            }
+
+            Text(
+                store.bountyAutopilotUseNativeEngine
+                    ? AppLocalization.string(
+                        "bounties.autopilot.use_native.note",
+                        fallback: "Native engine: Console drafts the answer locally with template matching. No OpenClaw process is launched."
+                    )
+                    : AppLocalization.string(
+                        "bounties.autopilot.use_native.note_off",
+                        fallback: "Legacy mode: Autopilot shells out to OpenClaw to draft the answer."
+                    )
+            )
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+
+            if store.bountyAutopilotAutoSubmit {
+                Text(AppLocalization.string(
+                    "bounties.autopilot.auto_submit.warning",
+                    fallback: "Risky: the app will publish and complete immediately after the executor returns an answer."
+                ))
+                .font(.caption2)
+                .foregroundStyle(.orange)
+            }
+
+            if let message = store.bountyAutopilotMessage {
+                Text(message)
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+            }
+            if let error = store.bountyAutopilotErrorMessage {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+}
+
+private struct BountyTaskDetailView: View {
+    @ObservedObject var store: ConsoleStore
+    @State private var detailTab: BountyDetailTab = .task
+
+    var body: some View {
         if let task = store.selectedBountyTask {
+            VStack(spacing: 0) {
+                Picker("", selection: $detailTab) {
+                    ForEach(BountyDetailTab.allCases) { tab in
+                        Label(tab.title, systemImage: tab.systemImage).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(.horizontal, 24)
+                .padding(.top, 18)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        titleHeader(for: task)
+
+                        switch detailTab {
+                        case .task:
+                            actionsCard(for: task)
+                            taskContextCard(for: task)
+                        case .execute:
+                            executionHandoffPanel()
+                            patchCourierAdvancedCard()
+                            submissionEditorsCard()
+                        case .audit:
+                            autopilotAuditCardOrEmpty()
+                        }
+                    }
+                    .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+            }
+            .navigationTitle(AppLocalization.string("section.bounties", fallback: "Bounties"))
+        } else if let run = store.selectedBountyAutopilotRun {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(AppLocalization.bountyText(task.title))
-                            .font(.largeTitle.bold())
-                        if AppLocalization.hasBountyTranslation(for: task.title) {
-                            Text(AppLocalization.string("bounties.raw_title", fallback: "Original: %@", task.title))
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        }
-                        HStack {
-                            if let credits = task.displayCredits {
-                                BadgeLabel(text: AppLocalization.string("credits.unit.count", fallback: "%d credits", credits), tintName: "green")
-                            }
-                            if store.selectedBountyTaskIsFollowed {
-                                BadgeLabel(text: AppLocalization.string("bounties.badge.following", fallback: "Following"), tintName: "blue")
-                            }
-                            BadgeLabel(text: AppLocalization.bountyTerm(task.status) ?? AppLocalization.unknown, tintName: "secondary")
-                        }
-                    }
+                    Text(AppLocalization.string("bounties.autopilot.history.title", fallback: "Historical Autopilot Run"))
+                        .font(.largeTitle.bold())
+                    Text(AppLocalization.string(
+                        "bounties.autopilot.history.note",
+                        fallback: "This run was imported from OpenClaw history. It may not exist in the currently loaded public bounty page, but the local audit record is preserved here."
+                    ))
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
 
-                    detailCard(AppLocalization.string("bounties.card.actions", fallback: "Actions"), systemImage: "hand.point.up.left") {
-                        if let blocker = store.bountyTaskPrerequisiteBlocker {
-                            Text(blocker)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Text(AppLocalization.string(
-                                "bounties.actions.note",
-                                fallback: "Follow high-signal tasks first. Claim only when you can answer cleanly; failed claims can still reveal reputation requirements."
-                            ))
-                            .foregroundStyle(.secondary)
-                        }
-
-                        HStack {
-                            Button {
-                                store.toggleSelectedBountyTaskFollow()
-                            } label: {
-                                Label(
-                                    store.selectedBountyTaskIsFollowed
-                                        ? AppLocalization.string("bounties.action.unfollow", fallback: "Remove follow")
-                                        : AppLocalization.string("bounties.action.follow", fallback: "Follow task"),
-                                    systemImage: store.selectedBountyTaskIsFollowed ? "bookmark.slash" : "bookmark"
-                                )
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button {
-                                Task {
-                                    await store.claimBountyTask(task)
-                                }
-                            } label: {
-                                Label(
-                                    store.selectedBountyTaskIsClaimed
-                                        ? AppLocalization.string("bounties.action.claimed", fallback: "Claimed")
-                                        : AppLocalization.string("credits.action.claim_selected_bounty", fallback: "Claim selected bounty"),
-                                    systemImage: store.selectedBountyTaskIsClaimed ? "checkmark.circle" : "hand.raised"
-                                )
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(store.selectedBountyTaskIsClaimed || !store.canClaimBountyTask(task))
-
-                            Link(destination: store.evoMapBountiesURL) {
-                                Label(AppLocalization.string("credits.open.bounty_board", fallback: "Bounty board"), systemImage: "safari")
-                            }
-
-                            Link(destination: store.evoMapReputationDocsURL) {
-                                Label(AppLocalization.string("bounties.open.reputation_docs", fallback: "Reputation rules"), systemImage: "book")
-                            }
-                        }
-
-                        if let contextLine = store.selectedBountyClaimContextLine {
-                            Label(contextLine, systemImage: "info.circle")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        }
-                        if let eligibilityLine = store.selectedBountyEligibilityLine {
-                            Label(
-                                eligibilityLine,
-                                systemImage: store.canSelectedNodeClaimBounty(task) == false ? "exclamationmark.triangle" : "checkmark.shield"
-                            )
-                            .font(.footnote)
-                            .foregroundStyle(store.canSelectedNodeClaimBounty(task) == false ? .orange : .secondary)
-                        }
-                        if let message = store.bountyTaskMessage {
-                            Text(message)
-                                .font(.footnote)
-                                .foregroundStyle(.green)
-                        }
-                        if let error = store.bountyTaskErrorMessage {
-                            Text(error)
-                                .font(.footnote)
-                                .foregroundStyle(.red)
-                        }
-                    }
-
-                    taskContextCard(for: task)
-
-                    deliveryCard()
+                    BountyAutopilotRunAuditCard(run: run)
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -1822,8 +2033,8 @@ private struct BountyTaskDetailView: View {
 
     private func taskContextCard(for task: EvoMapBountyTask) -> some View {
         detailCard(AppLocalization.string("bounties.card.context", fallback: "Task context"), systemImage: "doc.text.magnifyingglass") {
-            if let summary = task.summary?.nonEmpty {
-                Text(AppLocalization.bountyText(summary))
+            if let body = store.bountyBody(for: task)?.nonEmpty {
+                Text(AppLocalization.bountyText(body))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             } else {
@@ -1833,12 +2044,12 @@ private struct BountyTaskDetailView: View {
 
             DisclosureGroup(AppLocalization.string("bounties.disclosure.task_details", fallback: "Show task details, IDs, and flow")) {
                 VStack(alignment: .leading, spacing: 8) {
-                    if let summary = task.summary?.nonEmpty {
-                        Text(AppLocalization.bountyText(summary))
+                    if let body = store.bountyBody(for: task)?.nonEmpty {
+                        Text(AppLocalization.bountyText(body))
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
-                        if AppLocalization.hasBountyTranslation(for: summary) {
-                            Text(AppLocalization.string("bounties.raw_summary", fallback: "Original summary: %@", summary))
+                        if AppLocalization.hasBountyTranslation(for: body) {
+                            Text(AppLocalization.string("bounties.raw_summary", fallback: "Original summary: %@", body))
                                 .font(.footnote)
                                 .foregroundStyle(.tertiary)
                                 .textSelection(.enabled)
@@ -1915,123 +2126,385 @@ private struct BountyTaskDetailView: View {
         }
     }
 
-    private func deliveryCard() -> some View {
-        detailCard(AppLocalization.string("bounties.card.delivery", fallback: "Implementation and submission"), systemImage: "hammer") {
-            Label(store.selectedBountyClaimedStatusLine, systemImage: store.selectedBountyTaskIsClaimed ? "checkmark.seal" : "exclamationmark.triangle")
-                .foregroundStyle(store.selectedBountyTaskIsClaimed ? Color.secondary : Color.orange)
-                .textSelection(.enabled)
+    private func executionHandoffPanel() -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(AppLocalization.string("bounties.autopilot.selected.title", fallback: "Automatic model execution"))
+                    .font(.headline)
+                BadgeLabel(text: AppLocalization.string("bounties.autopilot.selected.badge", fallback: "OpenClaw + Skills"), tintName: "green")
+                Spacer()
+            }
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(AppLocalization.string("bounties.patch_courier.backend.title", fallback: "Patch Courier backend"))
-                        .font(.headline)
-                    BadgeLabel(text: AppLocalization.string("bounties.patch_courier.recommended", fallback: "Recommended"), tintName: "green")
-                    Spacer()
-                    if store.isPatchCourierBackendPolling {
-                        Label(AppLocalization.string("bounties.patch_courier.backend.polling", fallback: "Auto checking"), systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Text(AppLocalization.string(
-                    "bounties.patch_courier.backend.note",
-                    fallback: "Silent SMTP sends the claimed task to Patch Courier. IMAP checks replies and writes FINAL_ANSWER_MARKDOWN back into the draft; EvoMap submission stays manual."
-                ))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            Text(AppLocalization.string(
+                "bounties.autopilot.selected.note",
+                fallback: "Run the selected bounty directly through the local model and Skills loop. Console still keeps claim, prompt, raw output, final draft, and submit decision visible."
+            ))
+            .font(.footnote)
+            .foregroundStyle(.secondary)
 
-                Label(store.selectedBountyPatchCourierBackendStatusLine, systemImage: store.patchCourierBackendIsConfigured ? "checkmark.shield" : "gearshape")
-                    .font(.footnote)
-                    .foregroundStyle(store.patchCourierBackendIsConfigured ? Color.secondary : Color.orange)
-                    .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 6) {
+                BountyFollowStepRow(
+                    systemImage: "hand.raised",
+                    title: AppLocalization.string("bounties.autopilot.selected.step.claim.title", fallback: "1. Claim if needed"),
+                    detail: AppLocalization.string("bounties.autopilot.selected.step.claim.detail", fallback: "Console resolves task_id, uses the selected node, and records the claim state."),
+                    isComplete: store.selectedBountyTaskIsClaimed
+                )
+                BountyFollowStepRow(
+                    systemImage: "sparkles",
+                    title: AppLocalization.string("bounties.autopilot.selected.step.execute.title", fallback: "2. Run model + Skills"),
+                    detail: AppLocalization.string("bounties.autopilot.selected.step.execute.detail", fallback: "OpenClaw receives the locked prompt, calls the configured model and Skills, then returns a final Markdown answer."),
+                    isComplete: store.bountyAnswerDraft.answerText.nonEmpty != nil
+                )
+                BountyFollowStepRow(
+                    systemImage: "checkmark.seal",
+                    title: AppLocalization.string("bounties.autopilot.selected.step.submit.title", fallback: "3. Review or auto-submit"),
+                    detail: AppLocalization.string("bounties.autopilot.selected.step.submit.detail", fallback: "By default the draft stops in Final answer for review; enable auto-submit only when you trust the run."),
+                    isComplete: store.bountyAnswerDraft.publishedAssetID != nil
+                )
+            }
 
-                HStack {
-                    Button {
-                        Task {
-                            await store.sendSelectedBountyToPatchCourierBackend()
-                        }
+            if store.bountyAutopilotAutoSubmit {
+                Label(
+                    AppLocalization.string(
+                        "bounties.autopilot.auto_submit.indicator",
+                        fallback: "Auto-submit is ON · adjust in the cockpit header"
+                    ),
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+
+            HStack {
+                if store.isRunningBountyAutopilot {
+                    Button(role: .destructive) {
+                        store.cancelBountyAutopilot()
                     } label: {
                         Label(
-                            store.isSendingPatchCourierBackendTask
-                                ? AppLocalization.string("bounties.patch_courier.backend.sending", fallback: "Sending")
-                                : AppLocalization.string("bounties.patch_courier.backend.send_execute", fallback: "Send silently"),
-                            systemImage: "paperplane.fill"
+                            store.isCancellingBountyAutopilot
+                                ? AppLocalization.string("bounties.autopilot.cancelling_short", fallback: "Cancelling…")
+                                : AppLocalization.string("bounties.autopilot.cancel", fallback: "Cancel run"),
+                            systemImage: "stop.fill"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(store.isCancellingBountyAutopilot)
+                } else {
+                    Button {
+                        store.runSelectedBountyAutopilot()
+                    } label: {
+                        Label(
+                            AppLocalization.string("bounties.autopilot.selected.start", fallback: "Run selected bounty automatically"),
+                            systemImage: "play.fill"
                         )
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(
-                        !store.patchCourierBackendIsConfigured
-                            || !store.selectedBountyTaskIsClaimed
-                            || store.isSendingPatchCourierBackendTask
-                    )
-
-                    Button {
-                        Task {
-                            await store.checkSelectedBountyPatchCourierBackendInbox()
-                        }
-                    } label: {
-                        Label(
-                            store.isCheckingPatchCourierBackendInbox
-                                ? AppLocalization.string("bounties.patch_courier.backend.checking", fallback: "Checking")
-                                : AppLocalization.string("bounties.patch_courier.backend.check_now", fallback: "Check replies"),
-                            systemImage: "tray.and.arrow.down"
-                        )
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!store.patchCourierBackendIsConfigured || store.isCheckingPatchCourierBackendInbox)
-
-                    Button {
-                        if store.isPatchCourierBackendPolling {
-                            store.stopPatchCourierBackendPolling()
-                        } else {
-                            store.startPatchCourierBackendPollingIfNeeded()
-                        }
-                    } label: {
-                        Label(
-                            store.isPatchCourierBackendPolling
-                                ? AppLocalization.string("bounties.patch_courier.backend.stop_polling", fallback: "Stop auto check")
-                                : AppLocalization.string("bounties.patch_courier.backend.start_polling", fallback: "Start auto check"),
-                            systemImage: store.isPatchCourierBackendPolling ? "pause.circle" : "play.circle"
-                        )
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!store.patchCourierBackendIsEnabled)
-                }
-
-                if !store.selectedBountyTaskIsClaimed {
-                    Text(AppLocalization.string(
-                        "bounties.patch_courier.claim_hint",
-                        fallback: "Claim this bounty first, then send it to Patch Courier for execution."
-                    ))
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-                }
-                if !store.patchCourierBackendIsConfigured {
-                    Text(AppLocalization.string(
-                        "bounties.patch_courier.backend.configure_hint",
-                        fallback: "Enable backend mail and configure relay, sender, IMAP/SMTP, and mailbox app password in Settings."
-                    ))
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-                }
-                if let message = store.patchCourierBackendMessage {
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(.green)
-                }
-                if let error = store.patchCourierBackendErrorMessage {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
+                    .disabled(store.selectedOrFirstCreditNode == nil)
                 }
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.green.opacity(0.18), lineWidth: 1)
-            )
+
+            if store.isRunningBountyAutopilot && store.bountyAutopilotLiveOutput.isEmpty == false {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(
+                        AppLocalization.string("bounties.autopilot.live_output.title", fallback: "Live output"),
+                        systemImage: "terminal"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                    ScrollView {
+                        Text(store.bountyAutopilotLiveOutput)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 200)
+                    .padding(10)
+                    .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+            }
+
+            if store.selectedOrFirstCreditNode == nil {
+                Text(AppLocalization.string(
+                    "bounties.autopilot.selected.node_hint",
+                    fallback: "Connect or select a claimed node first so Console can claim and submit bounty tasks."
+                ))
+                .font(.footnote)
+                .foregroundStyle(.orange)
+            }
+
+            if let message = store.bountyAutopilotMessage {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.green)
+            }
+            if let error = store.bountyAutopilotErrorMessage {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+
+            DisclosureGroup(AppLocalization.string("bounties.autopilot.selected.manual_fallback", fallback: "Manual prompt fallback")) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(AppLocalization.string(
+                        "bounties.autopilot.selected.manual_note",
+                        fallback: "Only use this if the automatic run fails or you want to paste the same prompt into Codex or Claude Code yourself."
+                    ))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                    Button {
+                        store.copySelectedBountyExecutionBrief()
+                    } label: {
+                        Label(AppLocalization.string("bounties.executor.copy_brief", fallback: "Copy execution brief"), systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.bordered)
+
+                    if let message = store.bountyExecutionMessage {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(.green)
+                    }
+
+                    Text(store.selectedBountyExecutionBrief)
+                        .font(.system(.caption, design: .monospaced))
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .textSelection(.enabled)
+                }
+                .padding(.top, 8)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.blue.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private func titleHeader(for task: EvoMapBountyTask) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(AppLocalization.bountyText(task.title))
+                .font(.largeTitle.bold())
+            if AppLocalization.hasBountyTranslation(for: task.title) {
+                Text(AppLocalization.string("bounties.raw_title", fallback: "Original: %@", task.title))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            HStack {
+                if let credits = task.displayCredits {
+                    BadgeLabel(text: AppLocalization.string("credits.unit.count", fallback: "%d credits", credits), tintName: "green")
+                }
+                if store.selectedBountyTaskIsFollowed {
+                    BadgeLabel(text: AppLocalization.string("bounties.badge.following", fallback: "Following"), tintName: "blue")
+                }
+                BadgeLabel(text: AppLocalization.bountyTerm(task.status) ?? AppLocalization.unknown, tintName: "secondary")
+            }
+        }
+    }
+
+    private func actionsCard(for task: EvoMapBountyTask) -> some View {
+        detailCard(AppLocalization.string("bounties.card.actions", fallback: "Actions"), systemImage: "hand.point.up.left") {
+            if let blocker = store.bountyTaskPrerequisiteBlocker {
+                Text(blocker)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(AppLocalization.string(
+                    "bounties.actions.note",
+                    fallback: "Follow high-signal tasks first. Claim only when you can answer cleanly; failed claims can still reveal reputation requirements."
+                ))
+                .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Button {
+                    store.toggleSelectedBountyTaskFollow()
+                } label: {
+                    Label(
+                        store.selectedBountyTaskIsFollowed
+                            ? AppLocalization.string("bounties.action.unfollow", fallback: "Remove follow")
+                            : AppLocalization.string("bounties.action.follow", fallback: "Follow task"),
+                        systemImage: store.selectedBountyTaskIsFollowed ? "bookmark.slash" : "bookmark"
+                    )
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    Task { await store.claimBountyTask(task) }
+                } label: {
+                    Label(
+                        store.selectedBountyTaskIsClaimed
+                            ? AppLocalization.string("bounties.action.claimed", fallback: "Claimed")
+                            : AppLocalization.string("credits.action.claim_selected_bounty", fallback: "Claim selected bounty"),
+                        systemImage: store.selectedBountyTaskIsClaimed ? "checkmark.circle" : "hand.raised"
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(store.selectedBountyTaskIsClaimed || !store.canClaimBountyTask(task))
+
+                Link(destination: store.evoMapBountiesURL) {
+                    Label(AppLocalization.string("credits.open.bounty_board", fallback: "Bounty board"), systemImage: "safari")
+                }
+
+                Link(destination: store.evoMapReputationDocsURL) {
+                    Label(AppLocalization.string("bounties.open.reputation_docs", fallback: "Reputation rules"), systemImage: "book")
+                }
+            }
+
+            if let contextLine = store.selectedBountyClaimContextLine {
+                Label(contextLine, systemImage: "info.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            if let eligibilityLine = store.selectedBountyEligibilityLine {
+                Label(
+                    eligibilityLine,
+                    systemImage: store.canSelectedNodeClaimBounty(task) == false ? "exclamationmark.triangle" : "checkmark.shield"
+                )
+                .font(.footnote)
+                .foregroundStyle(store.canSelectedNodeClaimBounty(task) == false ? .orange : .secondary)
+            }
+            if let message = store.bountyTaskMessage {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.green)
+            }
+            if let error = store.bountyTaskErrorMessage {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func autopilotAuditCardOrEmpty() -> some View {
+        if let run = store.selectedBountyAutopilotRun {
+            BountyAutopilotRunAuditCard(run: run)
+        } else {
+            detailCard(AppLocalization.string("bounties.audit.empty.title", fallback: "Audit trail"), systemImage: "list.clipboard") {
+                Text(AppLocalization.string(
+                    "bounties.audit.empty.detail",
+                    fallback: "No autopilot run is associated with this task yet. Trigger Run selected on the Execute tab to capture an audit trail."
+                ))
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func patchCourierAdvancedCard() -> some View {
+        detailCard(AppLocalization.string("bounties.card.alternate_executors", fallback: "Alternate executors"), systemImage: "envelope.badge") {
+            Text(AppLocalization.string(
+                "bounties.alternate_executors.note",
+                fallback: "Use these only when OpenClaw cannot run locally. Patch Courier hands the task off via mail and writes the answer back when it replies."
+            ))
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+
+            DisclosureGroup(AppLocalization.string("bounties.patch_courier.advanced_disclosure", fallback: "Advanced: Patch Courier mail handoff")) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(AppLocalization.string("bounties.patch_courier.backend.title", fallback: "Patch Courier backend"))
+                            .font(.headline)
+                        Spacer()
+                        if store.isPatchCourierBackendPolling {
+                            Label(AppLocalization.string("bounties.patch_courier.backend.polling", fallback: "Auto checking"), systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text(AppLocalization.string(
+                        "bounties.patch_courier.backend.note",
+                        fallback: "Silent SMTP sends the claimed task to Patch Courier. IMAP checks replies and writes FINAL_ANSWER_MARKDOWN back into the draft; EvoMap submission stays manual."
+                    ))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                    Label(store.selectedBountyPatchCourierBackendStatusLine, systemImage: store.patchCourierBackendIsConfigured ? "checkmark.shield" : "gearshape")
+                        .font(.footnote)
+                        .foregroundStyle(store.patchCourierBackendIsConfigured ? Color.secondary : Color.orange)
+                        .textSelection(.enabled)
+
+                    HStack {
+                        Button {
+                            Task { await store.sendSelectedBountyToPatchCourierBackend() }
+                        } label: {
+                            Label(
+                                store.isSendingPatchCourierBackendTask
+                                    ? AppLocalization.string("bounties.patch_courier.backend.sending", fallback: "Sending")
+                                    : AppLocalization.string("bounties.patch_courier.backend.send_execute", fallback: "Send silently"),
+                                systemImage: "paperplane.fill"
+                            )
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(
+                            !store.patchCourierBackendIsConfigured
+                                || !store.selectedBountyTaskIsClaimed
+                                || store.isSendingPatchCourierBackendTask
+                        )
+
+                        Button {
+                            Task { await store.checkSelectedBountyPatchCourierBackendInbox() }
+                        } label: {
+                            Label(
+                                store.isCheckingPatchCourierBackendInbox
+                                    ? AppLocalization.string("bounties.patch_courier.backend.checking", fallback: "Checking")
+                                    : AppLocalization.string("bounties.patch_courier.backend.check_now", fallback: "Check replies"),
+                                systemImage: "tray.and.arrow.down"
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!store.patchCourierBackendIsConfigured || store.isCheckingPatchCourierBackendInbox)
+
+                        Button {
+                            if store.isPatchCourierBackendPolling {
+                                store.stopPatchCourierBackendPolling()
+                            } else {
+                                store.startPatchCourierBackendPollingIfNeeded()
+                            }
+                        } label: {
+                            Label(
+                                store.isPatchCourierBackendPolling
+                                    ? AppLocalization.string("bounties.patch_courier.backend.stop_polling", fallback: "Stop auto check")
+                                    : AppLocalization.string("bounties.patch_courier.backend.start_polling", fallback: "Start auto check"),
+                                systemImage: store.isPatchCourierBackendPolling ? "pause.circle" : "play.circle"
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!store.patchCourierBackendIsEnabled)
+                    }
+
+                    if !store.selectedBountyTaskIsClaimed {
+                        Text(AppLocalization.string(
+                            "bounties.patch_courier.claim_hint",
+                            fallback: "Claim this bounty first, then send it to Patch Courier for execution."
+                        ))
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                    }
+                    if !store.patchCourierBackendIsConfigured {
+                        Text(AppLocalization.string(
+                            "bounties.patch_courier.backend.configure_hint",
+                            fallback: "Enable backend mail and configure relay, sender, IMAP/SMTP, and mailbox app password in Settings."
+                        ))
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                    }
+                    if let message = store.patchCourierBackendMessage {
+                        Text(message).font(.footnote).foregroundStyle(.green)
+                    }
+                    if let error = store.patchCourierBackendErrorMessage {
+                        Text(error).font(.footnote).foregroundStyle(.red)
+                    }
+                }
+                .padding(.top, 8)
+            }
 
             DisclosureGroup(AppLocalization.string("bounties.patch_courier.manual_disclosure", fallback: "Manual Mail.app fallback")) {
                 VStack(alignment: .leading, spacing: 10) {
@@ -2073,58 +2546,19 @@ private struct BountyTaskDetailView: View {
                         .foregroundStyle(.orange)
                     }
                     if let message = store.bountyExecutionMessage {
-                        Text(message)
-                            .font(.footnote)
-                            .foregroundStyle(.green)
+                        Text(message).font(.footnote).foregroundStyle(.green)
                     }
                 }
                 .padding(.top, 8)
             }
+        }
+    }
 
-            DisclosureGroup(AppLocalization.string("bounties.executor.manual_disclosure", fallback: "Manual execution / fallback")) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(AppLocalization.string("bounties.executor.title", fallback: "Execute task"))
-                        .font(.headline)
-                    Picker(
-                        AppLocalization.string("bounties.executor.provider", fallback: "Executor"),
-                        selection: $store.bountyExecutionProvider
-                    ) {
-                        ForEach(BountyExecutionProvider.allCases) { provider in
-                            Text(provider.title).tag(provider)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-
-                    Text(store.bountyExecutionProvider.note)
-                        .foregroundStyle(.secondary)
-
-                    Text(store.selectedBountyExecutionCommand)
-                        .font(.system(.caption, design: .monospaced))
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .textSelection(.enabled)
-
-                    HStack {
-                        Button {
-                            store.copySelectedBountyExecutionBrief()
-                        } label: {
-                            Label(AppLocalization.string("bounties.executor.copy_brief", fallback: "Copy execution brief"), systemImage: "doc.on.doc")
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button {
-                            store.copySelectedBountyExecutionCommand()
-                        } label: {
-                            Label(AppLocalization.string("bounties.executor.copy_command", fallback: "Copy CLI command"), systemImage: "terminal")
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-                .padding(.top, 8)
-            }
-
-            Divider()
+    private func submissionEditorsCard() -> some View {
+        detailCard(AppLocalization.string("bounties.card.delivery", fallback: "Implementation and submission"), systemImage: "hammer") {
+            Label(store.selectedBountyClaimedStatusLine, systemImage: store.selectedBountyTaskIsClaimed ? "checkmark.seal" : "exclamationmark.triangle")
+                .foregroundStyle(store.selectedBountyTaskIsClaimed ? Color.secondary : Color.orange)
+                .textSelection(.enabled)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(AppLocalization.string("bounties.delivery.implementation_notes", fallback: "Implementation notes"))
@@ -2188,9 +2622,7 @@ private struct BountyTaskDetailView: View {
                 .buttonStyle(.bordered)
 
                 Button {
-                    Task {
-                        await store.submitSelectedBountyAnswer()
-                    }
+                    Task { await store.submitSelectedBountyAnswer() }
                 } label: {
                     Label(
                         store.isSubmittingBountyAnswer
@@ -2204,14 +2636,10 @@ private struct BountyTaskDetailView: View {
             }
 
             if let message = store.bountyAnswerDraftMessage {
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(.green)
+                Text(message).font(.footnote).foregroundStyle(.green)
             }
             if let error = store.bountyAnswerDraftErrorMessage {
-                Text(error)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
+                Text(error).font(.footnote).foregroundStyle(.red)
             }
         }
     }
@@ -2239,36 +2667,208 @@ private struct BountyFollowStepRow: View {
     }
 }
 
+private struct BountyRunMetricBlock: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.headline)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct BountyAutopilotRunAuditCard: View {
+    let run: BountyAutopilotRun
+
+    var body: some View {
+        detailCard(AppLocalization.string("bounties.autopilot.audit.title", fallback: "Autopilot audit trail"), systemImage: "list.clipboard") {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(run.title)
+                        .font(.headline)
+                    Text(run.startedAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                BadgeLabel(text: run.status.title, tintName: run.status.tintName)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
+                BountyRunMetricBlock(
+                    title: AppLocalization.string("bounties.autopilot.metric.reward", fallback: "Reward"),
+                    value: run.rewardCredits.map { AppLocalization.string("credits.unit.count", fallback: "%d credits", $0) } ?? AppLocalization.unknown
+                )
+                BountyRunMetricBlock(
+                    title: AppLocalization.string("bounties.autopilot.metric.score", fallback: "Score"),
+                    value: run.score.map(String.init) ?? AppLocalization.unknown
+                )
+                BountyRunMetricBlock(
+                    title: AppLocalization.string("bounties.autopilot.metric.executor", fallback: "Executor"),
+                    value: run.executor.title
+                )
+            }
+
+            BountyAutopilotTimelineView(run: run)
+
+            if let preview = run.finalAnswerPreview?.nonEmpty {
+                DisclosureGroup(AppLocalization.string("bounties.autopilot.answer_preview", fallback: "Show recovered answer preview")) {
+                    Text(preview)
+                        .font(.system(.caption, design: .monospaced))
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .textSelection(.enabled)
+                        .padding(.top, 8)
+                }
+            }
+
+            if let prompt = run.prompt?.nonEmpty {
+                DisclosureGroup(AppLocalization.string("bounties.autopilot.prompt", fallback: "Show saved prompt")) {
+                    Text(prompt)
+                        .font(.system(.caption, design: .monospaced))
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .textSelection(.enabled)
+                        .padding(.top, 8)
+                }
+            }
+
+            if let output = run.rawExecutorOutput?.nonEmpty {
+                DisclosureGroup(AppLocalization.string("bounties.autopilot.raw_output", fallback: "Show raw OpenClaw output")) {
+                    Text(output)
+                        .font(.system(.caption, design: .monospaced))
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .textSelection(.enabled)
+                        .padding(.top, 8)
+                }
+            }
+
+            if let error = run.errorMessage?.nonEmpty {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+}
+
+private struct BountyAutopilotTimelineView: View {
+    let run: BountyAutopilotRun
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(AppLocalization.string("bounties.autopilot.timeline", fallback: "Execution timeline"))
+                .font(.headline)
+
+            ForEach(run.events) { event in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: iconName(for: event.status))
+                        .foregroundStyle(color(for: event.status))
+                        .frame(width: 18)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(event.title)
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text(event.timestamp.formatted(date: .omitted, time: .shortened))
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                        Text(event.detail)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private func iconName(for status: BountyAutopilotRunStatus) -> String {
+        switch status {
+        case .queued, .scanning:
+            return "magnifyingglass.circle"
+        case .claiming:
+            return "hand.raised.circle"
+        case .executing:
+            return "bolt.circle"
+        case .needsReview:
+            return "eye.circle"
+        case .submitting:
+            return "paperplane.circle"
+        case .completed:
+            return "checkmark.circle.fill"
+        case .failed:
+            return "xmark.octagon.fill"
+        }
+    }
+
+    private func color(for status: BountyAutopilotRunStatus) -> Color {
+        switch status {
+        case .queued, .scanning:
+            return .blue
+        case .claiming, .executing, .submitting:
+            return .orange
+        case .needsReview:
+            return .purple
+        case .completed:
+            return .green
+        case .failed:
+            return .red
+        }
+    }
+}
+
 private struct BountyInspectorView: View {
     @ObservedObject var store: ConsoleStore
 
     var body: some View {
         List {
+            if let task = store.selectedBountyTask {
+                Section(AppLocalization.string("bounties.section.selected", fallback: "Selected")) {
+                    LabeledContent(AppLocalization.string("bounties.field.bounty_id", fallback: "Bounty ID"), value: task.bountyID ?? AppLocalization.unknown)
+                    LabeledContent(AppLocalization.string("bounties.field.question_id", fallback: "Question ID"), value: task.questionID ?? AppLocalization.unknown)
+                    LabeledContent(AppLocalization.string("bounties.field.reward", fallback: "Reward"), value: task.displayCredits.map { AppLocalization.string("credits.unit.count", fallback: "%d credits", $0) } ?? AppLocalization.unknown)
+                    LabeledContent(AppLocalization.string("bounties.field.deadline", fallback: "Deadline"), value: task.deadline ?? AppLocalization.unknown)
+                    LabeledContent(
+                        AppLocalization.string("bounties.field.required_reputation", fallback: "Required reputation"),
+                        value: store.bountyRequiredReputation(for: task).map { ">= \($0)" } ?? AppLocalization.unknown
+                    )
+                    LabeledContent(AppLocalization.string("bounties.field.submission", fallback: "Submission"), value: store.selectedClaimedBountyTask?.mySubmissionID ?? AppLocalization.unknown)
+                }
+            }
+
+            Section(AppLocalization.string("credits.section.selected_node", fallback: "Prerequisites")) {
+                LabeledContent(AppLocalization.string("bounties.inspector.selected_node", fallback: "Selected node"), value: store.selectedOrFirstCreditNode?.senderID ?? AppLocalization.chooseConnectedNode)
+                LabeledContent(
+                    AppLocalization.string("bounties.field.node_reputation", fallback: "Node reputation"),
+                    value: store.selectedNodeReputationScore.map { $0.formatted(.number.precision(.fractionLength(0))) } ?? AppLocalization.unknown
+                )
+                LabeledContent(AppLocalization.string("credits.inspector.claimed_nodes", fallback: "Claimed nodes"), value: "\(store.claimedNodeCount)")
+                LabeledContent(AppLocalization.string("credits.inspector.keychain_node_secrets", fallback: "Keychain node secrets"), value: "\(store.storedNodeSecretCount)")
+            }
+
             Section(AppLocalization.string("bounties.section.tracker", fallback: "Tracker")) {
                 LabeledContent(AppLocalization.string("bounties.inspector.loaded", fallback: "Loaded"), value: "\(store.bountyTasks.count)")
                 LabeledContent(AppLocalization.string("bounties.inspector.total", fallback: "Total"), value: store.bountyTaskTotalCount.map { $0.formatted(.number) } ?? AppLocalization.unknown)
                 LabeledContent(AppLocalization.string("bounties.inspector.following", fallback: "Following"), value: "\(store.followedBountyTaskIDs.count)")
                 LabeledContent(AppLocalization.string("bounties.inspector.claimed", fallback: "Claimed"), value: "\(store.claimedBountyTasks.count)")
                 LabeledContent(AppLocalization.string("bounties.inspector.filtered", fallback: "Filtered"), value: "\(store.filteredBountyTasks.count)")
-            }
-
-            Section(AppLocalization.string("credits.section.selected_node", fallback: "Prerequisites")) {
-                LabeledContent(AppLocalization.string("credits.inspector.claimed_nodes", fallback: "Claimed nodes"), value: "\(store.claimedNodeCount)")
-                LabeledContent(AppLocalization.string("credits.inspector.keychain_node_secrets", fallback: "Keychain node secrets"), value: "\(store.storedNodeSecretCount)")
-                LabeledContent(AppLocalization.string("bounties.inspector.selected_node", fallback: "Selected node"), value: store.selectedOrFirstCreditNode?.senderID ?? AppLocalization.chooseConnectedNode)
-                LabeledContent(
-                    AppLocalization.string("bounties.field.node_reputation", fallback: "Node reputation"),
-                    value: store.selectedNodeReputationScore.map { $0.formatted(.number.precision(.fractionLength(0))) } ?? AppLocalization.unknown
-                )
-            }
-
-            if let task = store.selectedBountyTask {
-                Section(AppLocalization.string("bounties.section.selected", fallback: "Selected")) {
-                    LabeledContent(AppLocalization.string("bounties.field.bounty_id", fallback: "Bounty ID"), value: task.bountyID ?? AppLocalization.unknown)
-                    LabeledContent(AppLocalization.string("bounties.field.question_id", fallback: "Question ID"), value: task.questionID ?? AppLocalization.unknown)
-                    LabeledContent(AppLocalization.string("bounties.field.reward", fallback: "Reward"), value: task.displayCredits.map { AppLocalization.string("credits.unit.count", fallback: "%d credits", $0) } ?? AppLocalization.unknown)
-                    LabeledContent(AppLocalization.string("bounties.field.submission", fallback: "Submission"), value: store.selectedClaimedBountyTask?.mySubmissionID ?? AppLocalization.unknown)
-                }
             }
         }
     }

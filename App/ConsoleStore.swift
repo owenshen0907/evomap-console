@@ -2,6 +2,18 @@ import AppKit
 import CryptoKit
 import Foundation
 
+private struct ShellCommandResult {
+    var stdout: String
+    var stderr: String
+    var exitCode: Int32
+
+    var combinedOutput: String {
+        [stdout.nonEmpty, stderr.nonEmpty]
+            .compactMap { $0 }
+            .joined(separator: "\n")
+    }
+}
+
 @MainActor
 final class ConsoleStore: ObservableObject {
     static let defaultSkillUpdateChangelog = "Iterative evolution update"
@@ -131,11 +143,18 @@ final class ConsoleStore: ObservableObject {
     @Published private(set) var bountyAnswerDraftMessage: String?
     @Published private(set) var bountyAnswerDraftErrorMessage: String?
     @Published private(set) var bountyExecutionMessage: String?
+    @Published private(set) var bountyAutopilotMessage: String?
+    @Published private(set) var bountyAutopilotErrorMessage: String?
+    @Published private(set) var bountyAutopilotLiveOutput: String = ""
     @Published private(set) var patchCourierBackendMessage: String?
     @Published private(set) var patchCourierBackendErrorMessage: String?
     @Published private(set) var isSendingPatchCourierBackendTask = false
     @Published private(set) var isCheckingPatchCourierBackendInbox = false
     @Published private(set) var isPatchCourierBackendPolling = false
+    @Published private(set) var isRunningBountyAutopilot = false
+    @Published private(set) var isCancellingBountyAutopilot = false
+    @Published private(set) var isImportingBountyAutopilotHistory = false
+    private var bountyAutopilotTask: Task<Void, Never>?
     @Published var nodes: [NodeRecord]
     @Published var skills: [SkillRecord]
     @Published private(set) var remoteSkills: [RemoteSkillSummary] = []
@@ -165,7 +184,11 @@ final class ConsoleStore: ObservableObject {
         }
     }
     @Published var bountyAnswerDraft = BountyAnswerDraft.empty
-    @Published var bountyExecutionProvider: BountyExecutionProvider = .codexCLI
+    @Published var bountyExecutionProvider: BountyExecutionProvider = .openClaw
+    @Published var bountyAutopilotAutoSubmit = false
+    @Published var bountyAutopilotUseNativeEngine = true
+    @Published private(set) var bountyAutopilotRuns: [BountyAutopilotRun] = ConsoleStore.loadBountyAutopilotRuns()
+    @Published var selectedBountyAutopilotRunID: BountyAutopilotRun.ID?
     @Published private(set) var remoteSkillStoreEnabled = true
     @Published private(set) var remoteSkillTotalCount = 0
     @Published private(set) var remoteSkillTotalDownloads = 0
@@ -196,6 +219,7 @@ final class ConsoleStore: ObservableObject {
     private static let bountyTaskPageSize = 50
     private static let followedBountyTaskIDsKey = "workspace.followedBountyTaskIDs"
     private static let bountyAnswerDraftsKey = "workspace.bountyAnswerDrafts"
+    private static let bountyAutopilotRunsKey = "workspace.bountyAutopilotRuns"
 
     init(
         nodes: [NodeRecord] = SampleData.nodes,
@@ -1318,6 +1342,10 @@ final class ConsoleStore: ObservableObject {
         return claimedBountyTask(for: task)
     }
 
+    func bountyBody(for task: EvoMapBountyTask) -> String? {
+        claimedBountyTask(for: task)?.body?.nonEmpty ?? task.summary?.nonEmpty
+    }
+
     var selectedBountyTaskIsClaimed: Bool {
         selectedClaimedBountyTask != nil
     }
@@ -1363,6 +1391,49 @@ final class ConsoleStore: ObservableObject {
         }
     }
 
+    var bountyAutopilotCandidates: [BountyAutopilotCandidate] {
+        filteredBountyTasks
+            .filter { isClaimedBountyTask($0) == false }
+            .filter { bountyTaskCanAttemptClaim($0) && canSelectedNodeClaimBounty($0) != false }
+            .map { bountyAutopilotCandidate(for: $0) }
+            .sorted { lhs, rhs in
+                if lhs.score != rhs.score {
+                    return lhs.score > rhs.score
+                }
+                return (lhs.task.displayCredits ?? 0) > (rhs.task.displayCredits ?? 0)
+            }
+            .prefix(5)
+            .map { $0 }
+    }
+
+    var selectedBountyAutopilotRun: BountyAutopilotRun? {
+        if let selectedBountyAutopilotRunID,
+           let run = bountyAutopilotRuns.first(where: { $0.id == selectedBountyAutopilotRunID }) {
+            return run
+        }
+        return bountyAutopilotRuns.first
+    }
+
+    var latestBountyAutopilotRun: BountyAutopilotRun? {
+        bountyAutopilotRuns.first
+    }
+
+    var bountyAutopilotStatusLine: String {
+        if let run = latestBountyAutopilotRun {
+            return AppLocalization.string(
+                "bounties.autopilot.status_line.latest",
+                fallback: "Latest run: %@ · %@ · %@",
+                run.title,
+                run.status.title,
+                run.updatedAt.formatted(.relative(presentation: .named))
+            )
+        }
+        return AppLocalization.string(
+            "bounties.autopilot.status_line.empty",
+            fallback: "No Console-owned autopilot runs yet. Start one here to keep a visible audit trail."
+        )
+    }
+
     var hiddenBountyTaskCount: Int {
         guard bountyShowsAllLoadedTasks == false else { return 0 }
         return max(0, filteredBountyTasks.count - defaultClaimableBountyTasks.count)
@@ -1388,6 +1459,71 @@ final class ConsoleStore: ObservableObject {
         (task.claimableTaskID != nil || task.bountyID?.nonEmpty != nil)
             && locallyClosedBountyTaskIDs.contains(task.id) == false
             && bountyTaskStatusAllowsNewClaim(task.status)
+    }
+
+    private func bountyAutopilotCandidate(for task: EvoMapBountyTask) -> BountyAutopilotCandidate {
+        var score = 0
+        var reasons: [String] = []
+        var risks: [String] = []
+
+        let credits = task.displayCredits ?? 0
+        if credits > 0 {
+            score += min(credits * 12, 120)
+            reasons.append(AppLocalization.string("bounties.autopilot.reason.reward", fallback: "%d credits", credits))
+        }
+
+        if bountyTaskCanAttemptClaim(task) {
+            score += 35
+            reasons.append(AppLocalization.string("bounties.autopilot.reason.open", fallback: "claimable/open"))
+        } else {
+            score -= 80
+            risks.append(AppLocalization.string("bounties.autopilot.risk.not_open", fallback: "not currently claimable"))
+        }
+
+        switch canSelectedNodeClaimBounty(task) {
+        case .some(true):
+            score += 35
+            reasons.append(AppLocalization.string("bounties.autopilot.reason.reputation_ok", fallback: "node reputation OK"))
+        case .some(false):
+            score -= 120
+            risks.append(AppLocalization.string("bounties.autopilot.risk.reputation", fallback: "node reputation too low"))
+        case .none:
+            score -= 8
+            risks.append(AppLocalization.string("bounties.autopilot.risk.reputation_unknown", fallback: "reputation requirement unknown"))
+        }
+
+        let body = bountyBody(for: task)?.nonEmpty
+        if let body {
+            score += body.count > 120 ? 35 : 18
+            reasons.append(AppLocalization.string("bounties.autopilot.reason.body", fallback: "task body available"))
+        } else {
+            score -= 35
+            risks.append(AppLocalization.string("bounties.autopilot.risk.no_body", fallback: "missing task body"))
+        }
+
+        let searchableText = "\(task.title) \(body ?? "")".lowercased()
+        let heavySignals = ["implement", "code", "bug", "api", "swift", "python", "typescript", "product", "fix", "error"]
+        if heavySignals.contains(where: { searchableText.contains($0) }) {
+            score += 18
+            reasons.append(AppLocalization.string("bounties.autopilot.reason.agent_fit", fallback: "agent-friendly"))
+        }
+
+        if let submissionCount = task.submissionCount, submissionCount > 0 {
+            score -= min(submissionCount * 8, 32)
+            risks.append(AppLocalization.string("bounties.autopilot.risk.competition", fallback: "%d existing submission(s)", submissionCount))
+        }
+
+        if task.title.count < 8 {
+            score -= 12
+            risks.append(AppLocalization.string("bounties.autopilot.risk.short_title", fallback: "very short title"))
+        }
+
+        return BountyAutopilotCandidate(
+            task: task,
+            score: score,
+            reasons: Array(reasons.prefix(4)),
+            risks: Array(risks.prefix(3))
+        )
     }
 
     private func bountyTaskStatusAllowsNewClaim(_ status: String?) -> Bool {
@@ -1422,6 +1558,7 @@ final class ConsoleStore: ObservableObject {
             task.title,
             AppLocalization.bountyText(task.title),
             task.summary,
+            bountyBody(for: task),
             task.domain,
             task.kind,
             task.status,
@@ -1548,7 +1685,7 @@ final class ConsoleStore: ObservableObject {
         guard let task = selectedBountyTask else { return "" }
         let claimed = selectedClaimedBountyTask
         let title = AppLocalization.bountyText(task.title)
-        let body = task.summary.map { AppLocalization.bountyText($0) }?.nonEmpty ?? AppLocalization.string(
+        let body = bountyBody(for: task).map { AppLocalization.bountyText($0) }?.nonEmpty ?? AppLocalization.string(
             "bounties.no_summary",
             fallback: "No summary returned by the public bounty API."
         )
@@ -1589,6 +1726,13 @@ final class ConsoleStore: ObservableObject {
         guard brief.nonEmpty != nil else { return "" }
         let cwd = "$HOME/Library/Application Support/EvomapConsole/TaskRuns"
         switch bountyExecutionProvider {
+        case .openClaw:
+            return """
+            mkdir -p "\(cwd)" && cat <<'EOF' > "\(cwd)/evomap-bounty-brief.md"
+            \(brief)
+            EOF
+            openclaw agent --local --agent main --message "$(< "\(cwd)/evomap-bounty-brief.md")"
+            """
         case .codexCLI:
             return """
             mkdir -p "\(cwd)" && cat <<'EOF' | /Applications/Codex.app/Contents/Resources/codex exec --cd "\(cwd)" --sandbox workspace-write -
@@ -2569,7 +2713,7 @@ final class ConsoleStore: ObservableObject {
             bountyID: task.bountyID,
             questionID: task.questionID,
             title: task.title,
-            body: task.summary,
+            body: bountyBody(for: task),
             implementationNotes: defaultBountyImplementationNotes(for: task, claimedTask: claimed),
             answerText: defaultBountyAnswerText(for: task),
             verificationNotes: defaultBountyVerificationNotes(for: task),
@@ -2621,6 +2765,788 @@ final class ConsoleStore: ObservableObject {
             "bounties.executor.message.command_copied",
             fallback: "Execution command copied. Run it in Terminal, then paste the produced answer back into Final answer."
         )
+    }
+
+    func runSelectedBountyAutopilot() {
+        guard isRunningBountyAutopilot == false else { return }
+        guard selectedBountyTask != nil else {
+            bountyAutopilotErrorMessage = AppLocalization.string(
+                "bounties.autopilot.error.no_selected",
+                fallback: "Select a bounty before running automation."
+            )
+            return
+        }
+        startBountyAutopilotTask(mode: .selected)
+    }
+
+    func startBountyAutopilot() {
+        guard isRunningBountyAutopilot == false else { return }
+        startBountyAutopilotTask(mode: .nextCandidate)
+    }
+
+    func cancelBountyAutopilot() {
+        guard let task = bountyAutopilotTask else { return }
+        guard isCancellingBountyAutopilot == false else { return }
+        isCancellingBountyAutopilot = true
+        bountyAutopilotMessage = AppLocalization.string(
+            "bounties.autopilot.cancelling",
+            fallback: "Cancelling current run after the in-flight step."
+        )
+        task.cancel()
+    }
+
+    private enum BountyAutopilotMode {
+        case nextCandidate, selected
+    }
+
+    private func startBountyAutopilotTask(mode: BountyAutopilotMode) {
+        isRunningBountyAutopilot = true
+        bountyAutopilotMessage = nil
+        bountyAutopilotErrorMessage = nil
+        bountyAutopilotTask = Task { [weak self] in
+            await self?.runBountyAutopilotInternal(mode: mode)
+        }
+    }
+
+    @MainActor
+    private func runBountyAutopilotInternal(mode: BountyAutopilotMode) async {
+        defer {
+            isRunningBountyAutopilot = false
+            isCancellingBountyAutopilot = false
+            bountyAutopilotTask = nil
+        }
+
+        let runID = createBountyAutopilotRun()
+
+        do {
+            switch mode {
+            case .selected:
+                guard let task = selectedBountyTask else {
+                    throw Self.autopilotError(AppLocalization.string(
+                        "bounties.autopilot.error.no_selected",
+                        fallback: "Select a bounty before running automation."
+                    ))
+                }
+                appendBountyAutopilotEvent(
+                    runID: runID,
+                    status: .scanning,
+                    title: AppLocalization.string("bounties.autopilot.event.selected.title", fallback: "Selected bounty locked"),
+                    detail: AppLocalization.string("bounties.autopilot.event.selected.detail", fallback: "Using the currently selected bounty instead of scanning for the next candidate.")
+                )
+                await refreshClaimedBountyTasks()
+                try Task.checkCancellation()
+                try await runBountyAutopilot(
+                    task: task,
+                    candidate: nil,
+                    runID: runID,
+                    selectionDetail: AppLocalization.string(
+                        "bounties.autopilot.event.choose.selected_detail",
+                        fallback: "Manual selection · direct model and Skills execution through OpenClaw."
+                    )
+                )
+
+            case .nextCandidate:
+                appendBountyAutopilotEvent(
+                    runID: runID,
+                    status: .scanning,
+                    title: AppLocalization.string("bounties.autopilot.event.scan.title", fallback: "Scanning bounty board"),
+                    detail: AppLocalization.string("bounties.autopilot.event.scan.detail", fallback: "Refreshing public bounties and claimed tasks before choosing a candidate.")
+                )
+                if bountyTasks.isEmpty {
+                    await refreshBountyTasks()
+                } else {
+                    await refreshClaimedBountyTasks()
+                }
+                try Task.checkCancellation()
+
+                var paginationAttempts = 0
+                let maxPaginationAttempts = 3
+                while bountyAutopilotCandidates.isEmpty && hasMoreBountyTasks && paginationAttempts < maxPaginationAttempts {
+                    try Task.checkCancellation()
+                    appendBountyAutopilotEvent(
+                        runID: runID,
+                        status: .scanning,
+                        title: AppLocalization.string("bounties.autopilot.event.paginate.title", fallback: "Loading more bounties"),
+                        detail: AppLocalization.string(
+                            "bounties.autopilot.event.paginate.detail",
+                            fallback: "No suitable candidate in current page (attempt %d). Pulling the next page.",
+                            paginationAttempts + 1
+                        )
+                    )
+                    await loadMoreBountyTasks()
+                    paginationAttempts += 1
+                }
+                try Task.checkCancellation()
+
+                guard let candidate = bountyAutopilotCandidates.first else {
+                    throw Self.autopilotError(AppLocalization.string(
+                        "bounties.autopilot.error.no_candidate",
+                        fallback: "No suitable bounty candidate found. Refresh bounties or lower the filter."
+                    ))
+                }
+                try await runBountyAutopilot(
+                    task: candidate.task,
+                    candidate: candidate,
+                    runID: runID,
+                    selectionDetail: "\(candidate.score) · \(candidate.reasons.joined(separator: " · "))"
+                )
+            }
+        } catch is CancellationError {
+            completeBountyAutopilotRunWithError(
+                Self.autopilotError(AppLocalization.string(
+                    "bounties.autopilot.error.cancelled",
+                    fallback: "Run cancelled by operator."
+                )),
+                runID: runID
+            )
+        } catch {
+            completeBountyAutopilotRunWithError(error, runID: runID)
+        }
+    }
+
+    private func runBountyAutopilot(
+        task: EvoMapBountyTask,
+        candidate: BountyAutopilotCandidate?,
+        runID: BountyAutopilotRun.ID,
+        selectionDetail: String
+    ) async throws {
+        selectedBountyTaskID = task.id
+        followBountyTask(task)
+        updateBountyAutopilotRun(runID) { run in
+            run.taskID = task.claimableTaskID ?? task.taskID
+            run.bountyID = task.bountyID
+            run.title = AppLocalization.bountyText(task.title)
+            run.rewardCredits = task.displayCredits
+            run.score = candidate?.score
+        }
+        appendBountyAutopilotEvent(
+            runID: runID,
+            status: .scanning,
+            title: AppLocalization.string("bounties.autopilot.event.choose.title", fallback: "Selected candidate"),
+            detail: selectionDetail
+        )
+
+        try Task.checkCancellation()
+
+        if claimedBountyTask(for: task) == nil {
+            appendBountyAutopilotEvent(
+                runID: runID,
+                status: .claiming,
+                title: AppLocalization.string("bounties.autopilot.event.claim.title", fallback: "Claiming in EvoMap"),
+                detail: selectedBountyClaimContextLine ?? AppLocalization.string("bounties.autopilot.event.claim.detail", fallback: "Resolving task_id and claiming with the selected node.")
+            )
+            await claimBountyTask(task)
+        }
+
+        guard claimedBountyTask(for: task) != nil else {
+            throw Self.autopilotError(bountyTaskErrorMessage ?? AppLocalization.string(
+                "bounties.autopilot.error.claim_failed",
+                fallback: "Autopilot could not claim the selected bounty."
+            ))
+        }
+
+        try Task.checkCancellation()
+
+        let prompt = selectedBountyExecutionBrief
+        updateBountyAutopilotRun(runID) { run in
+            run.prompt = prompt
+        }
+        appendBountyAutopilotEvent(
+            runID: runID,
+            status: .executing,
+            title: AppLocalization.string("bounties.autopilot.event.prompt.title", fallback: "Prompt locked"),
+            detail: AppLocalization.string("bounties.autopilot.event.prompt.detail", fallback: "The exact OpenClaw prompt is saved on this run for later review.")
+        )
+
+        bountyAutopilotLiveOutput = ""
+        let rawOutput: String
+        let finalAnswer: String
+        let verificationLine: String
+
+        if bountyAutopilotUseNativeEngine {
+            let engineInput = BountyWorkflowEngine.Input(
+                title: AppLocalization.bountyText(task.title),
+                body: bountyBody(for: task).map { AppLocalization.bountyText($0) },
+                rewardCredits: task.displayCredits,
+                taskID: claimedBountyTask(for: task)?.taskID ?? task.claimableTaskID ?? task.id,
+                bountyID: task.bountyID ?? task.id,
+                currentDraft: bountyAnswerDraft.answerText.nonEmpty
+            )
+            let result = BountyWorkflowEngine.run(input: engineInput)
+            try Task.checkCancellation()
+            switch result {
+            case .skipped(let reason):
+                throw Self.autopilotError(reason.summary)
+            case .answered(let answer):
+                finalAnswer = answer.markdown
+                rawOutput = [
+                    "template_id: \(answer.templateID)",
+                    "template_title: \(answer.templateTitle)",
+                    "score: \(answer.matchScore)",
+                    "signals: \(answer.signals.joined(separator: ", "))",
+                    "reasons: \(answer.matchReasons.joined(separator: ", "))",
+                    "",
+                    answer.markdown
+                ].joined(separator: "\n")
+                verificationLine = answer.verificationNote
+                bountyAutopilotLiveOutput = rawOutput
+            }
+        } else {
+            let result = try await Task.detached { [weak self] in
+                try Self.runOpenClawAgentCommand(brief: prompt) { chunk in
+                    Task { @MainActor in
+                        self?.bountyAutopilotLiveOutput.append(chunk)
+                    }
+                }
+            }.value
+            try Task.checkCancellation()
+            rawOutput = result.combinedOutput
+            finalAnswer = Self.extractAgentAnswer(from: result.stdout.nonEmpty ?? rawOutput)
+            guard finalAnswer.nonEmpty != nil else {
+                throw Self.autopilotError(AppLocalization.string(
+                    "bounties.autopilot.error.empty_answer",
+                    fallback: "OpenClaw returned no usable final answer."
+                ))
+            }
+            verificationLine = AppLocalization.string(
+                "bounties.autopilot.verification.generated",
+                fallback: "Generated by Console Autopilot through OpenClaw. Review the saved prompt, raw output, and final answer before submission."
+            )
+        }
+
+        bountyAnswerDraft.answerText = finalAnswer
+        bountyAnswerDraft.generatedAt = Date()
+        bountyAnswerDraft.updatedAt = Date()
+        bountyAnswerDraft.verificationNotes = [
+            bountyAnswerDraft.verificationNotes.nonEmpty,
+            verificationLine
+        ]
+        .compactMap { $0 }
+        .joined(separator: "\n")
+        persistSelectedBountyAnswerDraft()
+
+        updateBountyAutopilotRun(runID) { run in
+            run.rawExecutorOutput = rawOutput
+            run.finalAnswerPreview = String(finalAnswer.prefix(600))
+        }
+        appendBountyAutopilotEvent(
+            runID: runID,
+            status: bountyAutopilotAutoSubmit ? .submitting : .needsReview,
+            title: AppLocalization.string("bounties.autopilot.event.answer.title", fallback: "Draft answer captured"),
+            detail: AppLocalization.string("bounties.autopilot.event.answer.detail", fallback: "The answer has been written back into the Final answer field.")
+        )
+
+        if bountyAutopilotAutoSubmit {
+            await submitSelectedBountyAnswer()
+            if let error = bountyAnswerDraftErrorMessage?.nonEmpty {
+                throw Self.autopilotError(error)
+            }
+            updateBountyAutopilotRun(runID) { run in
+                run.status = .completed
+                run.completedAt = Date()
+                run.submissionID = bountyAnswerDraft.submissionID
+                run.publishedAssetID = bountyAnswerDraft.publishedAssetID
+            }
+            appendBountyAutopilotEvent(
+                runID: runID,
+                status: .completed,
+                title: AppLocalization.string("bounties.autopilot.event.complete.title", fallback: "Submitted to EvoMap"),
+                detail: bountyAnswerDraftMessage ?? AppLocalization.string("bounties.autopilot.event.complete.detail", fallback: "Published and completed through EvoMap.")
+            )
+        } else {
+            updateBountyAutopilotRun(runID) { run in
+                run.status = .needsReview
+                run.completedAt = Date()
+            }
+            bountyAutopilotMessage = AppLocalization.string(
+                "bounties.autopilot.message.needs_review",
+                fallback: "Autopilot finished the draft. Review the process and submit manually."
+            )
+        }
+    }
+
+    private func completeBountyAutopilotRunWithError(_ error: Error, runID: BountyAutopilotRun.ID) {
+        updateBountyAutopilotRun(runID) { run in
+            run.status = .failed
+            run.completedAt = Date()
+            run.errorMessage = error.localizedDescription
+        }
+        appendBountyAutopilotEvent(
+            runID: runID,
+            status: .failed,
+            title: AppLocalization.string("bounties.autopilot.event.failed.title", fallback: "Run failed"),
+            detail: error.localizedDescription
+        )
+        bountyAutopilotErrorMessage = error.localizedDescription
+    }
+
+    func importOpenClawBountyHistory() async {
+        guard isImportingBountyAutopilotHistory == false else { return }
+        isImportingBountyAutopilotHistory = true
+        bountyAutopilotMessage = nil
+        bountyAutopilotErrorMessage = nil
+        defer { isImportingBountyAutopilotHistory = false }
+
+        do {
+            let existingKeys = Set(bountyAutopilotRuns.compactMap(Self.bountyAutopilotDedupeKey))
+            let imported = try await Task.detached {
+                try Self.loadOpenClawBountyHistoryRuns(existingKeys: existingKeys)
+            }.value
+
+            guard imported.isEmpty == false else {
+                bountyAutopilotMessage = AppLocalization.string(
+                    "bounties.autopilot.import.none",
+                    fallback: "No new EvoMap bounty history found in OpenClaw workspace."
+                )
+                return
+            }
+
+            bountyAutopilotRuns = (imported + bountyAutopilotRuns)
+                .sorted { $0.updatedAt > $1.updatedAt }
+            if bountyAutopilotRuns.count > 120 {
+                bountyAutopilotRuns.removeLast(bountyAutopilotRuns.count - 120)
+            }
+            selectedBountyAutopilotRunID = bountyAutopilotRuns.first?.id
+            persistBountyAutopilotRuns()
+            bountyAutopilotMessage = AppLocalization.string(
+                "bounties.autopilot.import.done",
+                fallback: "Imported %d historical OpenClaw bounty run(s).",
+                imported.count
+            )
+        } catch {
+            bountyAutopilotErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func createBountyAutopilotRun() -> BountyAutopilotRun.ID {
+        let run = BountyAutopilotRun(
+            status: .queued,
+            taskID: nil,
+            bountyID: nil,
+            title: AppLocalization.string("bounties.autopilot.run.pending_title", fallback: "Choosing bounty"),
+            rewardCredits: nil,
+            score: nil,
+            executor: .openClaw,
+            autoSubmitEnabled: bountyAutopilotAutoSubmit,
+            events: [
+                BountyAutopilotEvent(
+                    title: AppLocalization.string("bounties.autopilot.event.started.title", fallback: "Run started"),
+                    detail: AppLocalization.string("bounties.autopilot.event.started.detail", fallback: "Console owns this run, so every prompt, answer, and submission decision is recorded."),
+                    status: .queued
+                )
+            ]
+        )
+        bountyAutopilotRuns.insert(run, at: 0)
+        selectedBountyAutopilotRunID = run.id
+        persistBountyAutopilotRuns()
+        return run.id
+    }
+
+    private func appendBountyAutopilotEvent(
+        runID: BountyAutopilotRun.ID,
+        status: BountyAutopilotRunStatus,
+        title: String,
+        detail: String
+    ) {
+        updateBountyAutopilotRun(runID) { run in
+            run.status = status
+            run.events.append(BountyAutopilotEvent(title: title, detail: detail, status: status))
+        }
+    }
+
+    private func updateBountyAutopilotRun(
+        _ runID: BountyAutopilotRun.ID,
+        mutate: (inout BountyAutopilotRun) -> Void
+    ) {
+        guard let index = bountyAutopilotRuns.firstIndex(where: { $0.id == runID }) else { return }
+        mutate(&bountyAutopilotRuns[index])
+        bountyAutopilotRuns[index].updatedAt = Date()
+        if bountyAutopilotRuns.count > 50 {
+            bountyAutopilotRuns.removeLast(bountyAutopilotRuns.count - 50)
+        }
+        persistBountyAutopilotRuns()
+    }
+
+    private func persistBountyAutopilotRuns() {
+        Self.saveBountyAutopilotRuns(bountyAutopilotRuns)
+    }
+
+    nonisolated private static func runOpenClawAgentCommand(
+        brief: String,
+        onChunk: (@Sendable (String) -> Void)? = nil
+    ) throws -> ShellCommandResult {
+        let fileManager = FileManager.default
+        let home = fileManager.homeDirectoryForCurrentUser
+        let workdir = home
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
+            .appendingPathComponent("EvomapConsole", isDirectory: true)
+            .appendingPathComponent("TaskRuns", isDirectory: true)
+        try fileManager.createDirectory(at: workdir, withIntermediateDirectories: true)
+
+        let openClawCandidates = [
+            home.appendingPathComponent(".openclaw/bin/openclaw").path,
+            "/opt/homebrew/bin/openclaw",
+            "/usr/local/bin/openclaw",
+        ]
+        let openClawPath = openClawCandidates.first { fileManager.isExecutableFile(atPath: $0) }
+        let process = Process()
+        if let openClawPath {
+            process.executableURL = URL(fileURLWithPath: openClawPath)
+            process.arguments = [
+                "agent",
+                "--local",
+                "--agent",
+                "main",
+                "--timeout",
+                "600",
+                "--json",
+                "--message",
+                brief,
+            ]
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = [
+                "openclaw",
+                "agent",
+                "--local",
+                "--agent",
+                "main",
+                "--timeout",
+                "600",
+                "--json",
+                "--message",
+                brief,
+            ]
+        }
+        process.currentDirectoryURL = workdir
+
+        var environment = ProcessInfo.processInfo.environment
+        let extraPath = [
+            home.appendingPathComponent(".openclaw/bin").path,
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin",
+        ].joined(separator: ":")
+        environment["PATH"] = [extraPath, environment["PATH"]].compactMap { $0 }.joined(separator: ":")
+        process.environment = environment
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        let stdoutBuffer = NSMutableString()
+        let bufferLock = NSLock()
+        if let onChunk {
+            stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard data.isEmpty == false else {
+                    handle.readabilityHandler = nil
+                    return
+                }
+                if let chunk = String(data: data, encoding: .utf8) {
+                    bufferLock.lock()
+                    stdoutBuffer.append(chunk)
+                    bufferLock.unlock()
+                    onChunk(chunk)
+                }
+            }
+        }
+
+        do {
+            try process.run()
+        } catch {
+            throw autopilotError("Could not launch OpenClaw: \(error.localizedDescription)")
+        }
+
+        let timeoutSeconds: TimeInterval = 660
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+
+        if process.isRunning {
+            process.terminate()
+            Thread.sleep(forTimeInterval: 0.5)
+            if process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+            }
+            process.waitUntilExit()
+            stdoutPipe.fileHandleForReading.readabilityHandler = nil
+            throw autopilotError("OpenClaw timed out after \(Int(timeoutSeconds)) seconds.")
+        }
+
+        stdoutPipe.fileHandleForReading.readabilityHandler = nil
+        let stdoutTail = String(decoding: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let stdout: String
+        if onChunk != nil {
+            bufferLock.lock()
+            stdoutBuffer.append(stdoutTail)
+            stdout = (stdoutBuffer as String).trimmingCharacters(in: .whitespacesAndNewlines)
+            bufferLock.unlock()
+        } else {
+            stdout = stdoutTail.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let stderr = String(decoding: stderrPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = ShellCommandResult(stdout: stdout, stderr: stderr, exitCode: process.terminationStatus)
+        guard process.terminationStatus == 0 else {
+            throw autopilotError(result.combinedOutput.nonEmpty ?? "OpenClaw exited with status \(process.terminationStatus).")
+        }
+        return result
+    }
+
+    nonisolated private static func extractAgentAnswer(from output: String) -> String {
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return "" }
+
+        if let data = trimmed.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data),
+           let value = bestTextValue(in: object)?.nonEmpty {
+            return value
+        }
+
+        return trimmed
+    }
+
+    nonisolated private static func bestTextValue(in object: Any) -> String? {
+        if let string = object as? String {
+            return string
+        }
+        if let array = object as? [Any] {
+            return array.compactMap { bestTextValue(in: $0) }.first(where: { $0.nonEmpty != nil })
+        }
+        guard let dictionary = object as? [String: Any] else { return nil }
+
+        let preferredKeys = [
+            "final_answer",
+            "finalAnswer",
+            "answer",
+            "reply",
+            "response",
+            "message",
+            "text",
+            "content",
+            "output",
+            "result",
+        ]
+        for key in preferredKeys {
+            if let value = dictionary[key],
+               let text = bestTextValue(in: value)?.nonEmpty {
+                return text
+            }
+        }
+        return dictionary.values.compactMap { bestTextValue(in: $0) }.first(where: { $0.nonEmpty != nil })
+    }
+
+    nonisolated private static func autopilotError(_ message: String) -> NSError {
+        NSError(
+            domain: "EvomapConsole.BountyAutopilot",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
+    }
+
+    nonisolated private static func bountyAutopilotDedupeKey(for run: BountyAutopilotRun) -> String? {
+        if let taskID = run.taskID?.nonEmpty {
+            return "task:\(taskID)"
+        }
+        if let bountyID = run.bountyID?.nonEmpty {
+            return "bounty:\(bountyID)"
+        }
+        return nil
+    }
+
+    nonisolated private struct ImportedOpenClawSubmission {
+        var sourceURL: URL
+        var sourceModifiedAt: Date
+        var bountyID: String
+        var taskID: String?
+        var title: String
+        var reward: Int?
+        var summary: String?
+        var content: String?
+    }
+
+    nonisolated private static func loadOpenClawBountyHistoryRuns(existingKeys: Set<String>) throws -> [BountyAutopilotRun] {
+        let fileManager = FileManager.default
+        let home = fileManager.homeDirectoryForCurrentUser
+        let workspace = home
+            .appendingPathComponent(".openclaw", isDirectory: true)
+            .appendingPathComponent("workspace", isDirectory: true)
+        let submissionsDirectory = workspace.appendingPathComponent("evomap-submissions", isDirectory: true)
+        guard fileManager.fileExists(atPath: submissionsDirectory.path) else {
+            return []
+        }
+
+        let sourceURLs = try fileManager.contentsOfDirectory(
+            at: submissionsDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        )
+        .filter { ["js", "md"].contains($0.pathExtension.lowercased()) }
+        .sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+        var seenKeys = existingKeys
+        var importedRuns: [BountyAutopilotRun] = []
+        for sourceURL in sourceURLs {
+            let text = try String(contentsOf: sourceURL, encoding: .utf8)
+            let modifiedAt = (try? sourceURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
+            let submissions: [ImportedOpenClawSubmission]
+            if sourceURL.pathExtension.lowercased() == "js" {
+                submissions = parseOpenClawSubmissionScript(text, sourceURL: sourceURL, modifiedAt: modifiedAt)
+            } else {
+                submissions = parseOpenClawSubmissionMarkdown(text, sourceURL: sourceURL, modifiedAt: modifiedAt)
+            }
+
+            for submission in submissions {
+                let key = submission.taskID?.nonEmpty.map { "task:\($0)" } ?? "bounty:\(submission.bountyID)"
+                guard seenKeys.contains(key) == false else { continue }
+                seenKeys.insert(key)
+                importedRuns.append(openClawImportedRun(from: submission))
+            }
+        }
+
+        return importedRuns.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    nonisolated private static func parseOpenClawSubmissionScript(
+        _ text: String,
+        sourceURL: URL,
+        modifiedAt: Date
+    ) -> [ImportedOpenClawSubmission] {
+        let pattern = #"(?s)\{\s*bounty_id:\s*'([^']+)'.*?\},"#
+        let objects = regexMatches(pattern, in: text).compactMap { match -> String? in
+            guard let range = Range(match.range, in: text) else { return nil }
+            return String(text[range])
+        }
+
+        return objects.compactMap { object in
+            guard let bountyID = firstRegexGroup(#"bounty_id:\s*'([^']+)'"#, in: object)?.nonEmpty else {
+                return nil
+            }
+            let title = firstRegexGroup(#"title:\s*'([^']+)'"#, in: object)
+                ?? firstRegexGroup(#"title:\s*"([^"]+)""#, in: object)
+                ?? bountyID
+            let content = firstRegexGroup(#"(?s)content:\s*`(.*?)`\s*,?\n"#, in: object)
+            return ImportedOpenClawSubmission(
+                sourceURL: sourceURL,
+                sourceModifiedAt: modifiedAt,
+                bountyID: bountyID,
+                taskID: firstRegexGroup(#"task_id:\s*'([^']+)'"#, in: object),
+                title: title,
+                reward: firstRegexGroup(#"reward:\s*([0-9]+)"#, in: object).flatMap(Int.init),
+                summary: firstRegexGroup(#"summary:\s*'([^']*)'"#, in: object)
+                    ?? firstRegexGroup(#"summary:\s*"([^"]*)""#, in: object),
+                content: content
+            )
+        }
+    }
+
+    nonisolated private static func parseOpenClawSubmissionMarkdown(
+        _ text: String,
+        sourceURL: URL,
+        modifiedAt: Date
+    ) -> [ImportedOpenClawSubmission] {
+        guard let bountyID = firstRegexGroup(#"bounty/([A-Za-z0-9_-]+)"#, in: text)
+            ?? firstRegexGroup(#"(?i)bounty[_ -]?id[:：]\s*`?([A-Za-z0-9_-]+)"#, in: text) else {
+            return []
+        }
+        let title = firstRegexGroup(#"(?m)^#\s+(.+)$"#, in: text) ?? bountyID
+        let reward = firstRegexGroup(#"(?i)(?:reward observed|reward|credits)[:：]?\s*([0-9]+)"#, in: text).flatMap(Int.init)
+        return [
+            ImportedOpenClawSubmission(
+                sourceURL: sourceURL,
+                sourceModifiedAt: modifiedAt,
+                bountyID: bountyID,
+                taskID: firstRegexGroup(#"(?i)task[_ -]?id[:：]\s*`?([A-Za-z0-9_-]+)"#, in: text),
+                title: title,
+                reward: reward,
+                summary: firstRegexGroup(#"(?m)^##\s+Summary\s*\n(.+)$"#, in: text),
+                content: text
+            )
+        ]
+    }
+
+    nonisolated private static func openClawImportedRun(from submission: ImportedOpenClawSubmission) -> BountyAutopilotRun {
+        let answerPreview = (submission.content ?? submission.summary ?? submission.title)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let sourceName = submission.sourceURL.lastPathComponent
+        let prompt = """
+        Imported from OpenClaw historical artifact.
+        Source: \(sourceName)
+        Original session prompt is not available in EvoMap Console; this record preserves the submitted task metadata and answer preview recovered from the local OpenClaw workspace.
+        """
+        let rawOutput = [
+            "source: \(sourceName)",
+            "bounty_id: \(submission.bountyID)",
+            submission.taskID.map { "task_id: \($0)" },
+            submission.reward.map { "reward: \($0) credits" },
+            submission.summary.map { "summary: \($0)" },
+        ]
+        .compactMap { $0 }
+        .joined(separator: "\n")
+
+        return BountyAutopilotRun(
+            startedAt: submission.sourceModifiedAt,
+            updatedAt: submission.sourceModifiedAt,
+            completedAt: submission.sourceModifiedAt,
+            status: .needsReview,
+            taskID: submission.taskID,
+            bountyID: submission.bountyID,
+            title: submission.title,
+            rewardCredits: submission.reward,
+            score: nil,
+            executor: .openClaw,
+            autoSubmitEnabled: true,
+            prompt: prompt,
+            rawExecutorOutput: rawOutput,
+            finalAnswerPreview: String(answerPreview.prefix(600)),
+            submissionID: nil,
+            publishedAssetID: nil,
+            errorMessage: nil,
+            events: [
+                BountyAutopilotEvent(
+                    timestamp: submission.sourceModifiedAt,
+                    title: AppLocalization.string("bounties.autopilot.import.event.title", fallback: "Imported from OpenClaw"),
+                    detail: AppLocalization.string(
+                        "bounties.autopilot.import.event.detail",
+                        fallback: "Recovered from %@. Verify final acceptance in EvoMap because historical scripts may include pending or attempted submissions.",
+                        sourceName
+                    ),
+                    status: .needsReview
+                ),
+                BountyAutopilotEvent(
+                    timestamp: submission.sourceModifiedAt,
+                    title: AppLocalization.string("bounties.autopilot.import.event.answer", fallback: "Recovered answer draft"),
+                    detail: String(answerPreview.prefix(240)),
+                    status: .needsReview
+                ),
+            ]
+        )
+    }
+
+    nonisolated private static func firstRegexGroup(_ pattern: String, in text: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              match.numberOfRanges > 1,
+              let captureRange = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return String(text[captureRange])
+            .replacingOccurrences(of: "\\`", with: "`")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    nonisolated private static func regexMatches(_ pattern: String, in text: String) -> [NSTextCheckingResult] {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return [] }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.matches(in: text, options: [], range: range)
     }
 
     func sendSelectedBountyToPatchCourier() {
@@ -3025,9 +3951,9 @@ final class ConsoleStore: ObservableObject {
             "submission_id": claimed?.mySubmissionID ?? "",
             "submission_status": claimed?.mySubmissionStatus ?? "",
             "title": AppLocalization.bountyText(task.title),
-            "body": task.summary.map { AppLocalization.bountyText($0) } ?? "",
+            "body": bountyBody(for: task).map { AppLocalization.bountyText($0) } ?? "",
             "raw_title": task.title,
-            "raw_body": task.summary ?? "",
+            "raw_body": bountyBody(for: task) ?? "",
             "reward_credits": task.displayCredits ?? 0,
             "required_reputation": bountyRequiredReputation(for: task) ?? 0,
             "node_id": selectedOrFirstCreditNode?.senderID ?? "",
@@ -3139,7 +4065,7 @@ final class ConsoleStore: ObservableObject {
             bountyID: task.bountyID,
             questionID: task.questionID,
             title: task.title,
-            body: task.summary,
+            body: bountyBody(for: task),
             implementationNotes: "",
             answerText: "",
             verificationNotes: "",
@@ -3169,7 +4095,7 @@ final class ConsoleStore: ObservableObject {
         draft.bountyID = task.bountyID
         draft.questionID = task.questionID
         draft.title = task.title
-        draft.body = task.summary
+        draft.body = bountyBody(for: task)
         draft.updatedAt = Date()
         bountyAnswerDraft = draft
 
@@ -3193,7 +4119,7 @@ final class ConsoleStore: ObservableObject {
 
     private func defaultBountyAnswerText(for task: EvoMapBountyTask) -> String {
         let title = AppLocalization.bountyText(task.title)
-        let body = task.summary.map { AppLocalization.bountyText($0) }?.nonEmpty
+        let body = bountyBody(for: task).map { AppLocalization.bountyText($0) }?.nonEmpty
         return [
             "# \(title)",
             "",
@@ -3238,7 +4164,7 @@ final class ConsoleStore: ObservableObject {
         let title = AppLocalization.bountyText(task.title)
         let finalAnswer = draft.answerText.nonEmpty
             ?? defaultBountyAnswerText(for: task)
-        let signals = Self.bountySignals(from: "\(task.title) \(task.summary ?? "")")
+        let signals = Self.bountySignals(from: "\(task.title) \(bountyBody(for: task) ?? "")")
         let modelName = node?.modelName.nonEmpty
         let envFingerprint = [
             "platform": "macOS",
@@ -6465,6 +7391,19 @@ final class ConsoleStore: ObservableObject {
     private static func saveBountyAnswerDrafts(_ drafts: [String: BountyAnswerDraft]) {
         guard let data = try? JSONEncoder().encode(drafts) else { return }
         UserDefaults.standard.set(data, forKey: bountyAnswerDraftsKey)
+    }
+
+    private static func loadBountyAutopilotRuns() -> [BountyAutopilotRun] {
+        guard let data = UserDefaults.standard.data(forKey: bountyAutopilotRunsKey),
+              let runs = try? JSONDecoder().decode([BountyAutopilotRun].self, from: data) else {
+            return []
+        }
+        return runs
+    }
+
+    private static func saveBountyAutopilotRuns(_ runs: [BountyAutopilotRun]) {
+        guard let data = try? JSONEncoder().encode(runs) else { return }
+        UserDefaults.standard.set(data, forKey: bountyAutopilotRunsKey)
     }
 
     private func orderAcceptanceKey(taskID: String, submissionID: String) -> String {

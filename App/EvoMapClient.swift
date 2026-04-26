@@ -518,6 +518,19 @@ struct EvoMapBountyTaskCompletePayload: Encodable {
         case assetID = "asset_id"
         case followupQuestion = "followup_question"
     }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(senderID, forKey: .senderID)
+        try container.encode(nodeID, forKey: .nodeID)
+        try container.encode(taskID, forKey: .taskID)
+        try container.encode(assetID, forKey: .assetID)
+        if let followupQuestion {
+            try container.encode(followupQuestion, forKey: .followupQuestion)
+        } else {
+            try container.encodeNil(forKey: .followupQuestion)
+        }
+    }
 }
 
 struct EvoMapPublishBundlePayload: Encodable, Hashable {
@@ -2423,10 +2436,37 @@ enum EvoMapClientError: LocalizedError {
     }
 }
 
+actor RequestThrottle {
+    private var nextAllowedAt: [String: Date] = [:]
+
+    func waitIfNeeded(key: String, minimumInterval: TimeInterval) async {
+        let now = Date()
+        if let next = nextAllowedAt[key], next > now {
+            let delay = next.timeIntervalSince(now)
+            if delay > 0 {
+                let nanoseconds = UInt64(delay * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: nanoseconds)
+            }
+        }
+        nextAllowedAt[key] = Date().addingTimeInterval(minimumInterval)
+    }
+
+    func deferUntil(key: String, date: Date) {
+        let current = nextAllowedAt[key] ?? .distantPast
+        if date > current {
+            nextAllowedAt[key] = date
+        }
+    }
+}
+
 struct EvoMapClient: EvoMapClientProtocol {
     private let session: URLSession
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private let throttle = RequestThrottle()
+
+    private static let maxRetries = 3
+    private static let defaultRetryDelay: TimeInterval = 2.0
 
     init(session: URLSession = .shared) {
         self.session = session
@@ -2711,50 +2751,79 @@ struct EvoMapClient: EvoMapClientProtocol {
         body: Body,
         bearerToken: String?
     ) async throws -> Response {
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = method
-        urlRequest.httpBody = try encoder.encode(body)
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-        urlRequest.setValue(Self.makeCorrelationID(), forHTTPHeaderField: "x-correlation-id")
-        if let bearerToken, !bearerToken.isEmpty {
-            urlRequest.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
-        }
+        let throttleKey = "\(method):\(endpoint.absoluteString)"
+        let encodedBody = try encoder.encode(body)
 
-        let (data, response) = try await session.data(for: urlRequest)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw EvoMapClientError.invalidResponse
-        }
+        var attempt = 0
+        while true {
+            attempt += 1
+            await throttle.waitIfNeeded(key: throttleKey, minimumInterval: 0.8)
 
-        guard (200..<300).contains(httpResponse.statusCode) else {
-            throw EvoMapClientError.httpStatus(httpResponse.statusCode, parseErrorMessage(from: data))
-        }
+            var urlRequest = URLRequest(url: endpoint)
+            urlRequest.httpMethod = method
+            urlRequest.httpBody = encodedBody
+            urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+            urlRequest.setValue(Self.makeCorrelationID(), forHTTPHeaderField: "x-correlation-id")
+            if let bearerToken, !bearerToken.isEmpty {
+                urlRequest.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+            }
 
-        return try decodeResponse(Response.self, from: data)
+            let (data, response) = try await session.data(for: urlRequest)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw EvoMapClientError.invalidResponse
+            }
+
+            if httpResponse.statusCode == 429, attempt < Self.maxRetries {
+                let retryAfter = Self.retryDelay(from: httpResponse) ?? (Self.defaultRetryDelay * Double(attempt))
+                await throttle.deferUntil(key: throttleKey, date: Date().addingTimeInterval(retryAfter))
+                continue
+            }
+
+            guard (200..<300).contains(httpResponse.statusCode) else {
+                throw EvoMapClientError.httpStatus(httpResponse.statusCode, parseErrorMessage(from: data))
+            }
+
+            return try decodeResponse(Response.self, from: data)
+        }
     }
 
     private func performGetRequest<Response: Decodable>(
         endpoint: URL,
         bearerToken: String? = nil
     ) async throws -> Response {
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "GET"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-        urlRequest.setValue(Self.makeCorrelationID(), forHTTPHeaderField: "x-correlation-id")
-        if let bearerToken, !bearerToken.isEmpty {
-            urlRequest.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
-        }
+        let throttleKey = "GET:\(endpoint.absoluteString)"
 
-        let (data, response) = try await session.data(for: urlRequest)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw EvoMapClientError.invalidResponse
-        }
+        var attempt = 0
+        while true {
+            attempt += 1
+            await throttle.waitIfNeeded(key: throttleKey, minimumInterval: 1.5)
 
-        guard (200..<300).contains(httpResponse.statusCode) else {
-            throw EvoMapClientError.httpStatus(httpResponse.statusCode, parseErrorMessage(from: data))
-        }
+            var urlRequest = URLRequest(url: endpoint)
+            urlRequest.httpMethod = "GET"
+            urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+            urlRequest.setValue(Self.makeCorrelationID(), forHTTPHeaderField: "x-correlation-id")
+            if let bearerToken, !bearerToken.isEmpty {
+                urlRequest.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+            }
 
-        return try decodeResponse(Response.self, from: data)
+            let (data, response) = try await session.data(for: urlRequest)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw EvoMapClientError.invalidResponse
+            }
+
+            if httpResponse.statusCode == 429, attempt < Self.maxRetries {
+                let retryAfter = Self.retryDelay(from: httpResponse) ?? (Self.defaultRetryDelay * Double(attempt))
+                await throttle.deferUntil(key: throttleKey, date: Date().addingTimeInterval(retryAfter))
+                continue
+            }
+
+            guard (200..<300).contains(httpResponse.statusCode) else {
+                throw EvoMapClientError.httpStatus(httpResponse.statusCode, parseErrorMessage(from: data))
+            }
+
+            return try decodeResponse(Response.self, from: data)
+        }
     }
 
     private func decodeResponse<Response: Decodable>(_ type: Response.Type, from data: Data) throws -> Response {
@@ -2763,6 +2832,14 @@ struct EvoMapClient: EvoMapClientProtocol {
         } catch {
             throw EvoMapClientError.decodingFailed(Self.decodingDiagnostic(for: error, data: data))
         }
+    }
+
+    private static func retryDelay(from response: HTTPURLResponse) -> TimeInterval? {
+        if let retryAfter = response.value(forHTTPHeaderField: "Retry-After"),
+           let seconds = Double(retryAfter), seconds > 0, seconds < 120 {
+            return seconds
+        }
+        return nil
     }
 
     private func makeEndpoint(baseURL: String, path: String) throws -> URL {

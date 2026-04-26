@@ -1648,7 +1648,150 @@ struct BountyAnswerDraft: Identifiable, Codable, Hashable {
     )
 }
 
+enum BountyAutopilotRunStatus: String, Codable, Hashable {
+    case queued
+    case scanning
+    case claiming
+    case executing
+    case needsReview
+    case submitting
+    case completed
+    case failed
+
+    var title: String {
+        switch self {
+        case .queued:
+            return AppLocalization.string("bounties.autopilot.status.queued", fallback: "Queued")
+        case .scanning:
+            return AppLocalization.string("bounties.autopilot.status.scanning", fallback: "Scanning")
+        case .claiming:
+            return AppLocalization.string("bounties.autopilot.status.claiming", fallback: "Claiming")
+        case .executing:
+            return AppLocalization.string("bounties.autopilot.status.executing", fallback: "Executing")
+        case .needsReview:
+            return AppLocalization.string("bounties.autopilot.status.needs_review", fallback: "Needs review")
+        case .submitting:
+            return AppLocalization.string("bounties.autopilot.status.submitting", fallback: "Submitting")
+        case .completed:
+            return AppLocalization.string("bounties.autopilot.status.completed", fallback: "Completed")
+        case .failed:
+            return AppLocalization.string("bounties.autopilot.status.failed", fallback: "Failed")
+        }
+    }
+
+    var tintName: String {
+        switch self {
+        case .queued, .scanning:
+            return "blue"
+        case .claiming, .executing, .submitting:
+            return "orange"
+        case .needsReview:
+            return "purple"
+        case .completed:
+            return "green"
+        case .failed:
+            return "red"
+        }
+    }
+}
+
+struct BountyAutopilotEvent: Identifiable, Codable, Hashable {
+    var id: UUID
+    var timestamp: Date
+    var title: String
+    var detail: String
+    var status: BountyAutopilotRunStatus
+
+    init(
+        id: UUID = UUID(),
+        timestamp: Date = Date(),
+        title: String,
+        detail: String,
+        status: BountyAutopilotRunStatus
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.title = title
+        self.detail = detail
+        self.status = status
+    }
+}
+
+struct BountyAutopilotRun: Identifiable, Codable, Hashable {
+    var id: UUID
+    var startedAt: Date
+    var updatedAt: Date
+    var completedAt: Date?
+    var status: BountyAutopilotRunStatus
+    var taskID: String?
+    var bountyID: String?
+    var title: String
+    var rewardCredits: Int?
+    var score: Int?
+    var executor: BountyExecutionProvider
+    var autoSubmitEnabled: Bool
+    var prompt: String?
+    var rawExecutorOutput: String?
+    var finalAnswerPreview: String?
+    var submissionID: String?
+    var publishedAssetID: String?
+    var errorMessage: String?
+    var events: [BountyAutopilotEvent]
+
+    init(
+        id: UUID = UUID(),
+        startedAt: Date = Date(),
+        updatedAt: Date = Date(),
+        completedAt: Date? = nil,
+        status: BountyAutopilotRunStatus,
+        taskID: String?,
+        bountyID: String?,
+        title: String,
+        rewardCredits: Int?,
+        score: Int?,
+        executor: BountyExecutionProvider,
+        autoSubmitEnabled: Bool,
+        prompt: String? = nil,
+        rawExecutorOutput: String? = nil,
+        finalAnswerPreview: String? = nil,
+        submissionID: String? = nil,
+        publishedAssetID: String? = nil,
+        errorMessage: String? = nil,
+        events: [BountyAutopilotEvent] = []
+    ) {
+        self.id = id
+        self.startedAt = startedAt
+        self.updatedAt = updatedAt
+        self.completedAt = completedAt
+        self.status = status
+        self.taskID = taskID
+        self.bountyID = bountyID
+        self.title = title
+        self.rewardCredits = rewardCredits
+        self.score = score
+        self.executor = executor
+        self.autoSubmitEnabled = autoSubmitEnabled
+        self.prompt = prompt
+        self.rawExecutorOutput = rawExecutorOutput
+        self.finalAnswerPreview = finalAnswerPreview
+        self.submissionID = submissionID
+        self.publishedAssetID = publishedAssetID
+        self.errorMessage = errorMessage
+        self.events = events
+    }
+}
+
+struct BountyAutopilotCandidate: Identifiable, Hashable {
+    var task: EvoMapBountyTask
+    var score: Int
+    var reasons: [String]
+    var risks: [String]
+
+    var id: String { task.id }
+}
+
 enum BountyExecutionProvider: String, CaseIterable, Identifiable, Codable {
+    case openClaw
     case codexCLI
     case claudeCode
     case directModel
@@ -1658,6 +1801,8 @@ enum BountyExecutionProvider: String, CaseIterable, Identifiable, Codable {
 
     var title: String {
         switch self {
+        case .openClaw:
+            return AppLocalization.string("bounties.executor.openclaw", fallback: "OpenClaw")
         case .codexCLI:
             return AppLocalization.string("bounties.executor.codex", fallback: "Codex CLI")
         case .claudeCode:
@@ -1671,6 +1816,11 @@ enum BountyExecutionProvider: String, CaseIterable, Identifiable, Codable {
 
     var note: String {
         switch self {
+        case .openClaw:
+            return AppLocalization.string(
+                "bounties.executor.openclaw.note",
+                fallback: "Recommended: let OpenClaw do the work, then paste the reviewed result back into Final answer. EvoMap submission still stays manual."
+            )
         case .codexCLI:
             return AppLocalization.string(
                 "bounties.executor.codex.note",
